@@ -15,7 +15,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 
 const ACCEPT =
-  ".jpg,.jpeg,.png,.webp,.gif,.pdf,.doc,.docx,.xls,.xlsx,.mp3,.ogg,.m4a,.mp4,.3gp,image/*,application/pdf,audio/*,video/*"
+  ".jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.mp3,.ogg,.m4a,.mp4,.3gp,image/*,application/pdf,audio/*,video/*"
 
 const MAX_BYTES = 16 * 1024 * 1024
 

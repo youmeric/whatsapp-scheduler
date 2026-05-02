@@ -11,9 +11,9 @@ import { randomUUID } from "node:crypto"
 
 import { isCookieValid } from "@/lib/auth"
 import {
-  ALLOWED_TYPES,
   MAX_UPLOAD_BYTES,
   getUploadsDir,
+  resolveUploadExt,
 } from "@/lib/uploads"
 
 export const runtime = "nodejs"
@@ -45,10 +45,15 @@ export async function POST(request: NextRequest) {
       { status: 413 }
     )
   }
-  const ext = ALLOWED_TYPES[file.type]
+  // resolveUploadExt accepte d'abord la MIME, puis tombe sur l'extension du
+  // nom de fichier — gère les `image/jpg` (Windows), `application/octet-stream`
+  // (parfois avec drag-n-drop), HEIC iPhone, etc.
+  const ext = resolveUploadExt({ mime: file.type, filename: file.name })
   if (!ext) {
     return Response.json(
-      { error: `Type de fichier non autorisé : ${file.type}` },
+      {
+        error: `Type de fichier non autorisé : ${file.type || "inconnu"} (${file.name})`,
+      },
       { status: 400 }
     )
   }
