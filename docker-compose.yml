@@ -24,7 +24,8 @@
 services:
   web:
     # Image construite par GitHub Actions à chaque push sur `main`.
-    # Tag `latest` = dernière version. Pour rollback, remplace par sha-abcd123.
+    # Tag `latest` = dernière version de la branche par défaut.
+    # Pour pinner / rollback : remplace `latest` par `sha-abc1234` (cf. ghcr.io).
     image: ghcr.io/youmeric/whatsapp-scheduler-web:latest
     container_name: whatsapp-scheduler-web
     restart: unless-stopped
