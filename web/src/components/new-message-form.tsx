@@ -1,0 +1,375 @@
+"use client"
+
+import { useActionState, useMemo, useState, useTransition } from "react"
+import { CalendarIcon, FileText, Paperclip, Repeat } from "lucide-react"
+import { toast } from "sonner"
+
+import { Button } from "@/components/ui/button"
+import { Calendar } from "@/components/ui/calendar"
+import { Card, CardContent, CardFooter } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { MessageEditor } from "@/components/message-editor"
+import {
+  AttachmentPicker,
+  type AttachmentValue,
+} from "@/components/attachment-picker"
+import { cn } from "@/lib/utils"
+import { digitsOnly, toWhatsappAddress } from "@/lib/phone"
+import type { Recipient, Template } from "@/lib/types"
+import {
+  createMessageAction,
+  type CreateMessageState,
+} from "@/app/(app)/messages/actions"
+
+const MAX_LEN = 1500
+
+const dateFormatter = new Intl.DateTimeFormat("fr-FR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+})
+
+function toIsoDate(d: Date): string {
+  // Use local-date components so the chosen day matches what the user sees.
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+function startOfToday(): Date {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+// Hours from 06:00 to 22:00 (every full hour) — covers reasonable send windows.
+const HOURS: string[] = Array.from({ length: 17 }, (_, i) => {
+  const h = i + 6
+  return `${String(h).padStart(2, "0")}:00`
+})
+
+type RecurOption = "none" | "weekly" | "monthly"
+
+export function NewMessageForm({
+  recipients,
+  templates = [],
+}: {
+  recipients: Recipient[]
+  templates?: Template[]
+}) {
+  const [date, setDate] = useState<Date | undefined>(undefined)
+  const [heure, setHeure] = useState<string>("10:00")
+  const [destinataire, setDestinataire] = useState<string>("")
+  const [message, setMessage] = useState<string>("")
+  const [recur, setRecur] = useState<RecurOption>("none")
+  const [recurCount, setRecurCount] = useState<string>("4")
+  const [templateId, setTemplateId] = useState<string>("")
+  const [attachment, setAttachment] = useState<AttachmentValue>(null)
+  const [isPending, startTransition] = useTransition()
+  const [state, formAction] = useActionState<CreateMessageState, FormData>(
+    async (prev, fd) => {
+      const next = await createMessageAction(prev, fd)
+      if (next?.error) {
+        toast.error(next.error)
+      }
+      return next
+    },
+    null
+  )
+
+  const today = startOfToday()
+  const charsLeft = MAX_LEN - message.length
+  const canSubmit =
+    !!date && !!destinataire && message.trim().length > 0 && charsLeft >= 0
+
+  const sortedTemplates = useMemo(
+    () => [...templates].sort((a, b) => a.nom.localeCompare(b.nom)),
+    [templates]
+  )
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!canSubmit) return
+    const fd = new FormData(e.currentTarget)
+    startTransition(() => formAction(fd))
+  }
+
+  function applyTemplate(id: string) {
+    setTemplateId(id)
+    if (!id) return
+    const tpl = sortedTemplates.find((t) => String(t.id) === id)
+    if (!tpl) return
+    if (
+      message.trim().length > 0 &&
+      !confirm("Remplacer le message en cours par ce modèle ?")
+    ) {
+      return
+    }
+    setMessage(tpl.contenu)
+  }
+
+  return (
+    <Card>
+      <form onSubmit={handleSubmit}>
+        <CardContent className="flex flex-col gap-5 pt-6">
+          {/* hidden inputs that mirror controlled state */}
+          <input
+            type="hidden"
+            name="date_envoi"
+            value={date ? toIsoDate(date) : ""}
+          />
+          <input type="hidden" name="heure_envoi" value={heure} />
+          <input type="hidden" name="destinataire" value={destinataire} />
+          <input type="hidden" name="recur" value={recur} />
+          <input type="hidden" name="recur_count" value={recurCount} />
+          <input
+            type="hidden"
+            name="attachment_url"
+            value={attachment?.url ?? ""}
+          />
+          <input
+            type="hidden"
+            name="attachment_filename"
+            value={attachment?.filename ?? ""}
+          />
+
+          {/* Template picker — only if there are templates */}
+          {sortedTemplates.length > 0 && (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <FileText className="size-3.5 text-muted-foreground" />
+                Modèle (optionnel)
+              </Label>
+              <Select value={templateId} onValueChange={(v) => applyTemplate(v ?? "")}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Pré-remplir avec un modèle…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sortedTemplates.map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      <div className="flex flex-col">
+                        <span>{t.nom}</span>
+                        <span className="text-xs text-muted-foreground line-clamp-1">
+                          {t.contenu.slice(0, 80)}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px] gap-3">
+            <div className="space-y-2">
+              <Label>Date d&apos;envoi</Label>
+              <Popover>
+                <PopoverTrigger
+                  render={(props) => (
+                    <Button
+                      {...props}
+                      type="button"
+                      variant="outline"
+                      size="lg"
+                      className={cn(
+                        "w-full justify-start font-normal",
+                        !date && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon />
+                      {date
+                        ? dateFormatter.format(date)
+                        : "Choisir une date"}
+                    </Button>
+                  )}
+                />
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={date}
+                    onSelect={setDate}
+                    disabled={(d) => d < today}
+                    autoFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Heure</Label>
+              <Select value={heure} onValueChange={(v) => setHeure(v ?? "10:00")}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {HOURS.map((h) => (
+                    <SelectItem key={h} value={h}>
+                      {h}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground -mt-3">
+            Envoi automatique ce jour-là à l&apos;heure choisie. Par défaut 10h
+            (l&apos;heure n&apos;est prise en compte que si la colonne{" "}
+            <code className="font-mono">heure_envoi</code> existe dans le
+            Google Sheet et que le workflow n8n la lit).
+          </p>
+
+          <div className="space-y-2">
+            <Label>Destinataire</Label>
+            <Select
+              value={destinataire}
+              onValueChange={(v) => setDestinataire(v ?? "")}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Sélectionner un destinataire" />
+              </SelectTrigger>
+              <SelectContent>
+                {recipients.map((r) => {
+                  // The bot expects the wppconnect chat-id: "<digits>@c.us".
+                  const address = toWhatsappAddress(r.numero)
+                  return (
+                    <SelectItem key={address || r.nom} value={address}>
+                      <div className="flex flex-col">
+                        <span>{r.nom}</span>
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {digitsOnly(r.numero)}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  )
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="message">Message</Label>
+              <span
+                className={cn(
+                  "text-xs tabular-nums",
+                  charsLeft < 0
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+                )}
+              >
+                {charsLeft} caractère{Math.abs(charsLeft) > 1 ? "s" : ""}
+              </span>
+            </div>
+            <MessageEditor
+              id="message"
+              name="message"
+              value={message}
+              onChange={setMessage}
+              rows={6}
+              placeholder="Bonjour, …"
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              Formats WhatsApp pris en charge :{" "}
+              <code className="font-mono">*gras*</code>,{" "}
+              <code className="font-mono">_italique_</code>,{" "}
+              <code className="font-mono">~barré~</code>,{" "}
+              <code className="font-mono">```code```</code>,{" "}
+              <code className="font-mono">{"> citation"}</code>.
+            </p>
+          </div>
+
+          {/* Attachment */}
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <Label className="flex items-center gap-1.5">
+              <Paperclip className="size-3.5 text-muted-foreground" />
+              Pièce jointe (optionnel)
+            </Label>
+            <AttachmentPicker value={attachment} onChange={setAttachment} />
+          </div>
+
+          {/* Recurrence */}
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <Label className="flex items-center gap-1.5">
+              <Repeat className="size-3.5 text-muted-foreground" />
+              Répétition
+            </Label>
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px] gap-3">
+              <Select
+                value={recur}
+                onValueChange={(v) => setRecur((v ?? "none") as RecurOption)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Pas de répétition</SelectItem>
+                  <SelectItem value="weekly">Toutes les semaines</SelectItem>
+                  <SelectItem value="monthly">Tous les mois</SelectItem>
+                </SelectContent>
+              </Select>
+              {recur !== "none" && (
+                <Select
+                  value={recurCount}
+                  onValueChange={(v) => setRecurCount(v ?? "4")}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[2, 3, 4, 5, 6, 8, 10, 12].map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n} occurrences
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            {recur !== "none" && (
+              <p className="text-xs text-muted-foreground">
+                {recurCount} messages identiques seront créés (un{" "}
+                {recur === "weekly"
+                  ? "tous les 7 jours"
+                  : "tous les mois"}{" "}
+                à partir de la date choisie).
+              </p>
+            )}
+          </div>
+
+          {state?.error ? (
+            <p className="text-sm text-destructive">{state.error}</p>
+          ) : null}
+        </CardContent>
+
+        <CardFooter className="flex justify-end gap-2 pt-4">
+          <Button
+            type="submit"
+            size="lg"
+            disabled={!canSubmit || isPending}
+          >
+            {isPending
+              ? "Enregistrement…"
+              : recur === "none"
+                ? "Programmer le message"
+                : `Programmer ${recurCount} messages`}
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
+  )
+}

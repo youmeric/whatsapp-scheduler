@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env*.local
+.env.local
+.env
+data
+*.md
+.vscode
+.idea
+.claude
+README.md
+N8N_WEBHOOKS.md
+DEPLOY.md

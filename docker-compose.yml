@@ -1,0 +1,76 @@
+# docker-compose.yml — site web "WhatsApp scheduler"
+#
+# ╔═══════════════════════════════════════════════════════════════════════╗
+# ║  Ce fichier sert TEL QUEL sur le NAS — pas besoin de cloner le repo. ║
+# ║  Tu n'as besoin que de DEUX fichiers sur le NAS :                    ║
+# ║    /srv/whatsapp-scheduler/docker-compose.yml   (ce fichier)         ║
+# ║    /srv/whatsapp-scheduler/.env.production      (les secrets)        ║
+# ╚═══════════════════════════════════════════════════════════════════════╝
+#
+# Usage sur le NAS :
+#   docker compose pull           # télécharge la dernière image depuis ghcr.io
+#   docker compose up -d          # (re)démarre le container avec la nouvelle image
+#
+# Premier setup :
+#   1. mkdir /srv/whatsapp-scheduler && cd /srv/whatsapp-scheduler
+#   2. wget <url-de-ce-fichier-sur-github>
+#   3. cp .env.production.example .env.production && nano .env.production
+#   4. docker compose up -d
+#
+# ⚠️ Remplace `<USER>/<REPO>` ci-dessous par ton username GitHub et le nom du
+# repo, puis garde cette modif locale (le repo GitHub conserve le placeholder).
+
+services:
+  web:
+    # Image construite par GitHub Actions à chaque push sur `main`.
+    # Tag `latest` = dernière version de la branche par défaut.
+    # Pour pinner / rollback : remplace `latest` par `sha-abc1234` (cf. ghcr.io).
+    image: ghcr.io/<USER>/<REPO>-web:latest
+    container_name: whatsapp-scheduler-web
+    restart: unless-stopped
+    # `pull_policy: always` force `docker compose up` à re-checker ghcr.io
+    # avant de démarrer — combiné avec `docker compose pull` c'est ceinture +
+    # bretelles, mais ça évite d'oublier le pull.
+    pull_policy: always
+    ports:
+      - "${HOST_PORT:-4000}:4000"
+    env_file:
+      - ./.env.production
+    environment:
+      # Aligne les dates avec n8n et le bot.
+      - TZ=Europe/Paris
+    volumes:
+      # SQLite DB + pièces jointes uploadées. Survit aux rebuilds.
+      - whatsapp_scheduler_data:/app/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -qO- http://localhost:4000/login >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    # Active Watchtower auto-update sur ce container (cf. service ci-dessous,
+    # à dé-commenter pour activer).
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # ───────────────────────── (optionnel) Watchtower ─────────────────────────
+  # Décommente le bloc ci-dessous pour que le NAS pull automatiquement les
+  # nouvelles versions de l'image et redémarre le container, sans avoir à
+  # taper `docker compose pull && docker compose up -d`.
+  #
+  # watchtower:
+  #   image: containrrr/watchtower
+  #   container_name: watchtower
+  #   restart: unless-stopped
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   environment:
+  #     - TZ=Europe/Paris
+  #     - WATCHTOWER_CLEANUP=true        # supprime les vieilles images après update
+  #     - WATCHTOWER_POLL_INTERVAL=300   # check toutes les 5 minutes
+  #     - WATCHTOWER_LABEL_ENABLE=true   # ne touche qu'aux containers labellés ci-dessus
+
+volumes:
+  whatsapp_scheduler_data:
+    name: whatsapp_scheduler_data

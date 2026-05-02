@@ -1,0 +1,52 @@
+# --- IDE / OS ---
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+
+# --- Node / build ---
+node_modules/
+*.log
+npm-debug.log*
+
+# --- WhatsApp bot (wppconnect session — JAMAIS commit) ---
+# Contient le QR code "scanné" : si quelqu'un récupère ce dossier il peut
+# se faire passer pour ton compte WhatsApp.
+tokens/
+userDataDir/
+WebpackChunks/
+WhatsAppImages/
+.wwebjs_auth/
+
+# --- Secrets ---
+# Le `.env.production` contient AUTH_SECRET et N8N_API_KEY.
+# Ne JAMAIS le commit, surtout en repo public.
+.env
+.env.local
+.env.production
+.env.*.local
+
+# --- Data persistante ---
+# La SQLite DB. Vit dans le volume Docker en prod, ne doit pas être commit.
+/data/
+/web/data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# --- Uploads (pièces jointes) ---
+/uploads/
+/web/uploads/
+
+# --- Backup ---
+backup-*.db
+*.bak
+
+# --- Build artifacts (au cas où ils remontent à la racine) ---
+.next/
+dist/
+build/
+
+# Note: /web/ a son propre .gitignore qui complète celui-ci.

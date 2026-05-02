@@ -1,0 +1,13 @@
+# Force LF line endings for files that run on Linux (NAS, GitHub runners).
+# Sans ça, les CRLF de Windows cassent les scripts shell et les YAML.
+* text=auto eol=lf
+
+# Binaires (au cas où un screenshot ou un favicon traîne)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.zip binary
