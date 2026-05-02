@@ -69,8 +69,26 @@ export async function POST(request: NextRequest) {
   await writeFile(path, buffer)
 
   // Build a full URL so n8n / the bot can fetch it without knowing our host.
-  const origin = request.nextUrl.origin
-  const url = `${origin}/api/files/${safeName}`
+  //
+  // Priorité :
+  //   1. SITE_BASE_URL  ← env var explicite (recommandé en prod derrière reverse proxy)
+  //                       Exemple : SITE_BASE_URL=https://whatsapp.nas-nexus.fr
+  //   2. X-Forwarded-Host + X-Forwarded-Proto  ← si le reverse proxy les set
+  //   3. request.nextUrl.origin  ← fallback interne (souvent http://0.0.0.0:4000)
+  let baseUrl: string
+  const explicitBase = process.env.SITE_BASE_URL?.trim().replace(/\/+$/, "")
+  if (explicitBase) {
+    baseUrl = explicitBase
+  } else {
+    const fwdHost = request.headers.get("x-forwarded-host")
+    const fwdProto = request.headers.get("x-forwarded-proto")
+    if (fwdHost) {
+      baseUrl = `${fwdProto || "https"}://${fwdHost}`
+    } else {
+      baseUrl = request.nextUrl.origin
+    }
+  }
+  const url = `${baseUrl}/api/files/${safeName}`
 
   return Response.json({
     ok: true,

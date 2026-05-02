@@ -62,16 +62,23 @@ const EXT_TO_CANONICAL: Record<string, string> = {
 /**
  * Détermine l'extension à utiliser pour un upload. Retourne `null` si le
  * fichier est rejeté (ni MIME ni extension reconnus).
+ *
+ * Stratégie : on essaie l'extension du fichier en PREMIER (plus fiable que
+ * la MIME, qui varie d'un OS/browser à l'autre — Windows envoie `image/jpg`
+ * pour les JPG, Edge envoie parfois `application/octet-stream`, etc.).
+ * Si l'extension n'est pas reconnue, on tente la MIME en fallback.
  */
 export function resolveUploadExt(opts: {
   mime: string
   filename: string
 }): string | null {
-  const ext = ALLOWED_TYPES[opts.mime]
-  if (ext) return ext
   const fileExt = opts.filename.split(".").pop()?.toLowerCase()
-  if (!fileExt) return null
-  return EXT_TO_CANONICAL[fileExt] ?? null
+  if (fileExt && EXT_TO_CANONICAL[fileExt]) {
+    return EXT_TO_CANONICAL[fileExt]
+  }
+  const mimeExt = ALLOWED_TYPES[opts.mime]
+  if (mimeExt) return mimeExt
+  return null
 }
 
 const EXT_TO_MIME: Record<string, string> = {
