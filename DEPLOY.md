@@ -5,12 +5,18 @@ Workflow :
 2. **GitHub Actions** build l'image Docker et la pousse vers `ghcr.io`
 3. **NAS** pull l'image et redémarre le container
 
-Le NAS n'a **pas besoin** de cloner le repo. Il lui faut juste 2 fichiers :
+Le NAS n'a **pas besoin** de cloner le repo. Il lui faut juste 2 fichiers + un dossier de données :
+
 ```
-/srv/whatsapp-scheduler/
+/volume2/docker/whatsapp-scheduler/
 ├── docker-compose.yml
-└── .env.production
+├── .env.production
+└── data/                          ← créé au premier lancement
+    ├── app.db                     ← SQLite (users, modèles, audit)
+    └── uploads/                   ← pièces jointes
 ```
+
+> **Pourquoi bind mount au lieu de volume Docker nommé ?** Tout est accessible directement via le filesystem du NAS (Synology File Station, SMB, backup). Tu peux supprimer entièrement le container Docker et redéployer sans rien perdre — tant que `data/` reste en place, tes utilisateurs / modèles / pièces jointes sont préservés.
 
 ---
 
@@ -33,42 +39,43 @@ gh repo create whatsapp-scheduler --public --source=. --push
 
 ### 1.2. Vérifier que le workflow tourne
 
-Va sur `https://github.com/<TON-USER>/<TON-REPO>/actions`. Un job "Build & push Docker image" doit apparaître et passer ✅ en ~3-5 minutes.
+Va sur `https://github.com/youmeric/whatsapp-scheduler/actions`. Un job "Build & push Docker image" doit apparaître et passer ✅ en ~3-5 minutes.
 
 À la fin, tu auras une image dispo à :
 ```
-ghcr.io/<TON-USER>/<TON-REPO>-web:latest
+ghcr.io/youmeric/whatsapp-scheduler-web:latest
 ```
 
 ### 1.3. Rendre le package public (optionnel mais recommandé)
 
 Par défaut, GHCR rend les nouveaux packages **privés** même si le repo est public. Pour le passer public :
 
-1. `https://github.com/<TON-USER>?tab=packages`
-2. Clique sur le package `<TON-REPO>-web`
+1. `https://github.com/youmeric?tab=packages`
+2. Clique sur le package `whatsapp-scheduler-web`
 3. **Package settings** (à droite) → **Change visibility** → Public
 
 Sinon il faudra que le NAS s'authentifie via un PAT (cf. section "repo privé" plus bas).
 
-### 1.4. Setup du NAS (Debian)
+### 1.4. Setup du NAS
 
 ```bash
 # Crée le dossier de travail
-sudo mkdir -p /srv/whatsapp-scheduler
-sudo chown $USER:$USER /srv/whatsapp-scheduler
-cd /srv/whatsapp-scheduler
+sudo mkdir -p /volume2/docker/whatsapp-scheduler
+sudo chown $USER:$USER /volume2/docker/whatsapp-scheduler
+cd /volume2/docker/whatsapp-scheduler
 
 # Récupère les 2 fichiers depuis GitHub (raw)
-wget https://raw.githubusercontent.com/<TON-USER>/<TON-REPO>/main/docker-compose.yml
-wget -O .env.production.example https://raw.githubusercontent.com/<TON-USER>/<TON-REPO>/main/web/.env.production.example
+wget https://raw.githubusercontent.com/youmeric/whatsapp-scheduler/main/docker-compose.yml
+wget -O .env.production https://raw.githubusercontent.com/youmeric/whatsapp-scheduler/main/web/.env.production.example
 
-# Édite le compose pour mettre TON image
-sed -i 's|<USER>/<REPO>|<TON-USER>/<TON-REPO>|g' docker-compose.yml
-
-# Crée et remplis .env.production
-cp .env.production.example .env.production
+# Édite les secrets
 nano .env.production
 # → AUTH_SECRET, N8N_API_KEY, BOOTSTRAP_ADMIN_USERNAME / _PASSWORD au minimum
+
+# Crée le dossier data/ avec les bonnes permissions
+# (le user `app` dans le container a l'uid 1001, pas le même que ton user host)
+mkdir -p data
+sudo chown -R 1001:1001 data
 
 # Démarre
 docker compose up -d
@@ -77,6 +84,8 @@ docker compose logs -f web
 ```
 
 Le site est accessible sur `http://<ip-du-nas>:4000`.
+
+> 💡 **Sur Synology DSM** : tu peux aussi créer le dossier via File Station, mais le `chown` reste obligatoire (en SSH). Sans ça, le container redémarre en boucle avec une erreur `permission denied` sur `/app/data/app.db`.
 
 ### 1.5. Premier login
 
@@ -100,7 +109,7 @@ GitHub Actions builde l'image en ~3 min. Tu peux suivre dans l'onglet "Actions" 
 ### 2.2. Côté NAS — option manuelle
 
 ```bash
-cd /srv/whatsapp-scheduler
+cd /volume2/docker/whatsapp-scheduler
 docker compose pull && docker compose up -d
 ```
 
@@ -120,12 +129,12 @@ Watchtower poll ghcr.io toutes les 5 minutes et redémarre le container quand il
 
 Toutes les images sont taguées avec le SHA du commit (ex. `sha-a1b2c3d`). Pour revenir à une version précédente :
 
-1. Va sur `https://github.com/<TON-USER>?tab=packages` → ouvre le package
+1. Va sur `https://github.com/youmeric?tab=packages` → ouvre le package
 2. Note le tag de la version qui marchait (ex. `sha-9f8e7d6`)
 3. Sur le NAS :
 
 ```bash
-cd /srv/whatsapp-scheduler
+cd /volume2/docker/whatsapp-scheduler
 sed -i 's|:latest|:sha-9f8e7d6|' docker-compose.yml
 docker compose up -d
 ```
@@ -136,19 +145,41 @@ Pour revenir à latest : remets `:latest` à la place du sha.
 
 ## 4. Backup de la DB
 
+Avec le bind mount, la donnée est déjà sur le filesystem du NAS dans
+`/volume2/docker/whatsapp-scheduler/data/`. Le simple fait que ce dossier
+soit dans `/volume2/docker/` veut dire qu'il sera couvert par les backups
+Hyper Backup / Snapshot Replication de DSM si tu en as.
+
+Pour un backup applicatif "propre" (snapshot SQLite cohérent même pendant
+une écriture en cours) :
+
 ```bash
-# Crée un backup ponctuel
-docker compose exec web sh -c 'sqlite3 /app/data/app.db ".backup /tmp/backup.db"'
-docker compose cp web:/tmp/backup.db ./backup-$(date +%F).db
+cd /volume2/docker/whatsapp-scheduler
+mkdir -p backups
+# Snapshot SQLite via la commande backup (gère bien la concurrence)
+docker compose exec -T web sh -c 'sqlite3 /app/data/app.db ".backup /app/data/_snapshot.db"'
+mv data/_snapshot.db backups/app-$(date +%F).db
 ```
 
-À automatiser via cron sur le NAS :
+À automatiser via cron sur le NAS (DSM : **Task Scheduler**) :
+
+```bash
+# /volume2/docker/whatsapp-scheduler/backup.sh
+#!/bin/sh
+cd /volume2/docker/whatsapp-scheduler
+mkdir -p backups
+docker compose exec -T web sh -c 'sqlite3 /app/data/app.db ".backup /app/data/_snapshot.db"' \
+  && mv data/_snapshot.db "backups/app-$(date +%F).db"
+# Garde 30 jours
+find backups -name "app-*.db" -mtime +30 -delete
+```
 
 ```cron
-0 3 * * * cd /srv/whatsapp-scheduler && docker compose cp web:/app/data/app.db ./backups/app-$(date +\%F).db && find ./backups -name "app-*.db" -mtime +30 -delete
+0 3 * * * /volume2/docker/whatsapp-scheduler/backup.sh
 ```
 
-(garde 30 jours de backups, supprime les plus anciens)
+> 💡 Pour les pièces jointes, `data/uploads/` est déjà sur le filesystem —
+> couvert par tes backups DSM. Pas de manip applicative.
 
 ---
 
@@ -163,14 +194,54 @@ Si tu gardes le repo et le package GHCR privés, le NAS doit s'authentifier **un
 #    → expiration: long ou "no expiration"
 
 # 2. Login GHCR sur le NAS
-echo "ghp_xxxxxxxxxxxxxxxx" | docker login ghcr.io -u <TON-USER> --password-stdin
+echo "ghp_xxxxxxxxxxxxxxxx" | docker login ghcr.io -u youmeric --password-stdin
 ```
 
 Le login persiste dans `~/.docker/config.json`. Plus besoin de le refaire.
 
 ---
 
-## 6. Troubleshooting
+## 6. Migration depuis l'ancienne install
+
+Si tu avais déjà un site qui tournait avec l'ancien setup (`build: ./web` +
+volume Docker nommé `whatsapp_scheduler_data`), la nouvelle install utilise
+un **bind mount** dans `/volume2/docker/whatsapp-scheduler/data/`. Il faut
+copier la DB et les uploads de l'ancien volume vers le nouveau dossier.
+
+```bash
+# 1. Arrête l'ancien site
+cd <chemin/de/l'ancienne/install>
+docker compose down
+
+# 2. Setup le nouveau dossier (cf. § 1.4 — sans démarrer encore)
+sudo mkdir -p /volume2/docker/whatsapp-scheduler/data
+cd /volume2/docker/whatsapp-scheduler
+
+# 3. Copie le contenu de l'ancien volume vers le nouveau dossier
+docker run --rm \
+  -v whatsapp_scheduler_data:/source:ro \
+  -v /volume2/docker/whatsapp-scheduler/data:/dest \
+  alpine sh -c 'cp -av /source/. /dest/ && chown -R 1001:1001 /dest'
+
+# 4. Vérifie que app.db est bien là
+ls -la /volume2/docker/whatsapp-scheduler/data/
+# → tu dois voir app.db et éventuellement uploads/
+
+# 5. Démarre le nouveau site
+docker compose up -d
+docker compose logs -f web
+```
+
+Une fois que tu as vérifié que tout fonctionne (login OK, modèles
+présents, journal d'audit visible), tu peux supprimer l'ancien volume :
+
+```bash
+docker volume rm whatsapp_scheduler_data
+```
+
+---
+
+## 7. Troubleshooting
 
 ### Le workflow GitHub Actions échoue
 Va dans l'onglet **Actions** et clique sur le job pour voir les logs. Causes habituelles :
@@ -183,6 +254,15 @@ Va dans l'onglet **Actions** et clique sur le job pour voir les logs. Causes hab
 
 ### "AUTH_SECRET env var is required"
 Ton `.env.production` est vide ou mal placé. Doit être à côté du `docker-compose.yml`.
+
+### Le container redémarre en boucle, logs : `permission denied` sur `/app/data/app.db`
+Le dossier `data/` n'a pas les bonnes permissions. Le user `app` du container
+est en `uid=1001` :
+```bash
+cd /volume2/docker/whatsapp-scheduler
+sudo chown -R 1001:1001 data
+docker compose restart
+```
 
 ### "n8n GET /messages failed: 401"
 `N8N_API_KEY` ne correspond pas à celle vérifiée dans tes nœuds n8n.
@@ -201,7 +281,7 @@ docker compose logs -f web --tail 200
 
 ---
 
-## 7. Fichiers du repo qui comptent
+## 8. Fichiers du repo qui comptent
 
 | Fichier | Rôle |
 |---|---|
