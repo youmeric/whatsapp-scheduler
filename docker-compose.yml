@@ -25,7 +25,7 @@ services:
     # Image construite par GitHub Actions à chaque push sur `main`.
     # Tag `latest` = dernière version de la branche par défaut.
     # Pour pinner / rollback : remplace `latest` par `sha-abc1234` (cf. ghcr.io).
-    image: ghcr.io/<USER>/<REPO>-web:latest
+    image: ghcr.io/youmeric/whatsapp-scheduler-web:latest
     container_name: whatsapp-scheduler-web
     restart: unless-stopped
     # `pull_policy: always` force `docker compose up` à re-checker ghcr.io
