@@ -82,9 +82,9 @@ const RECUR_ITEMS: Record<string, string> = {
   weekly: "Toutes les semaines",
   monthly: "Tous les mois",
 }
-const RECUR_COUNTS = [2, 3, 4, 5, 6, 8, 10, 12]
+const RECUR_COUNTS = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 26, 52]
 const RECUR_COUNT_ITEMS: Record<string, string> = Object.fromEntries(
-  RECUR_COUNTS.map((n) => [String(n), `${n} occurrences`])
+  RECUR_COUNTS.map((n) => [String(n), `${n} envois`])
 )
 
 export function NewMessageForm({
@@ -109,6 +109,7 @@ export function NewMessageForm({
   const [message, setMessage] = useState<string>(initialMessage ?? "")
   const [recur, setRecur] = useState<RecurOption>("none")
   const [recurCount, setRecurCount] = useState<string>("4")
+  const [rotation, setRotation] = useState<boolean>(false)
   const [templateId, setTemplateId] = useState<string>("")
   const [attachment, setAttachment] = useState<AttachmentValue>(null)
   const [isPending, startTransition] = useTransition()
@@ -131,9 +132,14 @@ export function NewMessageForm({
     message.trim().length > 0 &&
     charsLeft >= 0
 
-  // Total rows created = recipients × recurrence occurrences.
+  // Rotation only applies with a recurrence.
+  const rotationActive = rotation && recur !== "none"
   const occurrences = recur === "none" ? 1 : Number(recurCount)
-  const totalMessages = destinataires.length * occurrences
+  // Rotation → 1 recipient per send (total = number of sends).
+  // Otherwise → recipients × occurrences.
+  const totalMessages = rotationActive
+    ? occurrences
+    : destinataires.length * occurrences
 
   const sortedTemplates = useMemo(
     () => [...templates].sort((a, b) => a.nom.localeCompare(b.nom)),
@@ -186,6 +192,11 @@ export function NewMessageForm({
           />
           <input type="hidden" name="recur" value={recur} />
           <input type="hidden" name="recur_count" value={recurCount} />
+          <input
+            type="hidden"
+            name="rotation"
+            value={rotationActive ? "on" : ""}
+          />
           <input
             type="hidden"
             name="attachment_url"
@@ -376,23 +387,52 @@ export function NewMessageForm({
                   <SelectContent>
                     {RECUR_COUNTS.map((n) => (
                       <SelectItem key={n} value={String(n)}>
-                        {n} occurrences
+                        {n} envois
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               )}
             </div>
+
+            {/* Rotation — only meaningful with a recurrence AND several
+                recipients. Sends go to each recipient in turn, cycling. */}
+            {recur !== "none" && destinataires.length > 1 && (
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={rotation}
+                  onCheckedChange={(v) => setRotation(Boolean(v))}
+                  className="mt-0.5"
+                />
+                <span>
+                  Rotation : un destinataire par envoi, à tour de rôle
+                  <span className="block text-xs text-muted-foreground">
+                    (au lieu d&apos;envoyer à tout le monde à chaque fois)
+                  </span>
+                </span>
+              </label>
+            )}
+
             {recur !== "none" && (
               <p className="text-xs text-muted-foreground">
-                {recurCount} envois {recur === "weekly"
-                  ? "espacés de 7 jours"
-                  : "mensuels"}{" "}
-                à partir de la date choisie
-                {destinataires.length > 1
-                  ? `, pour chacun des ${destinataires.length} destinataires (${totalMessages} messages au total)`
-                  : ""}
-                .
+                {rotationActive ? (
+                  <>
+                    {recurCount} envois{" "}
+                    {recur === "weekly" ? "hebdomadaires" : "mensuels"}, en
+                    alternant les {destinataires.length} destinataires à tour de
+                    rôle ({totalMessages} messages au total).
+                  </>
+                ) : (
+                  <>
+                    {recurCount} envois{" "}
+                    {recur === "weekly" ? "espacés de 7 jours" : "mensuels"} à
+                    partir de la date choisie
+                    {destinataires.length > 1
+                      ? `, pour chacun des ${destinataires.length} destinataires (${totalMessages} messages au total)`
+                      : ""}
+                    .
+                  </>
+                )}
               </p>
             )}
           </div>

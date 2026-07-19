@@ -110,47 +110,63 @@ export async function createMessageAction(
   const attachment_url = attachment_url_raw || undefined
   const attachment_filename = attachment_filename_raw || undefined
 
-  // One message per (recipient × date). N recipients and M recurrence dates
-  // therefore create N×M rows in the sheet.
-  const total = destinataires.length * dates.length
+  // Rotation mode: only meaningful when there's a recurrence. Instead of the
+  // cross-product, each successive send goes to the next recipient in the
+  // roster (cycling), e.g. week 1 → A, week 2 → B, week 3 → A…
+  const rotation =
+    String(formData.get("rotation") ?? "") === "on" && recur !== "none"
+
+  // Build the (destinataire, date) jobs to create.
+  const jobs: { destinataire: string; date: string }[] = []
+  if (rotation) {
+    dates.forEach((d, i) => {
+      jobs.push({ destinataire: destinataires[i % destinataires.length], date: d })
+    })
+  } else {
+    // One message per (recipient × date): N recipients × M dates rows.
+    for (const destinataire of destinataires) {
+      for (const d of dates) jobs.push({ destinataire, date: d })
+    }
+  }
+
+  const total = jobs.length
   let createdCount = 0
   const cree_le = nowLocalDateTime()
-  for (const destinataire of destinataires) {
-    for (const d of dates) {
-      const id = randomUUID()
-      const result = await postMessage({
-        id,
-        date_envoi: d,
-        ...(heure_envoi ? { heure_envoi } : {}),
-        destinataire,
-        message,
-        cree_par: session.username,
-        cree_le,
-        ...(attachment_url ? { attachment_url } : {}),
-        ...(attachment_filename ? { attachment_filename } : {}),
-      })
-      if (!result.ok) {
-        // Stop on first error; report partial success if any.
-        if (createdCount === 0) {
-          return { error: `Erreur lors de l'enregistrement : ${result.error}` }
-        }
-        return {
-          error: `Enregistré ${createdCount}/${total}, puis erreur : ${result.error}`,
-        }
+  for (const job of jobs) {
+    const id = randomUUID()
+    const result = await postMessage({
+      id,
+      date_envoi: job.date,
+      ...(heure_envoi ? { heure_envoi } : {}),
+      destinataire: job.destinataire,
+      message,
+      cree_par: session.username,
+      cree_le,
+      ...(attachment_url ? { attachment_url } : {}),
+      ...(attachment_filename ? { attachment_filename } : {}),
+    })
+    if (!result.ok) {
+      // Stop on first error; report partial success if any.
+      if (createdCount === 0) {
+        return { error: `Erreur lors de l'enregistrement : ${result.error}` }
       }
-      logAudit({
-        username: session.username,
-        action: "create_message",
-        target: id,
-        details: {
-          date_envoi: d,
-          destinataire,
-          ...(heure_envoi ? { heure_envoi } : {}),
-          recurring: recur !== "none",
-        },
-      })
-      createdCount++
+      return {
+        error: `Enregistré ${createdCount}/${total}, puis erreur : ${result.error}`,
+      }
     }
+    logAudit({
+      username: session.username,
+      action: "create_message",
+      target: id,
+      details: {
+        date_envoi: job.date,
+        destinataire: job.destinataire,
+        ...(heure_envoi ? { heure_envoi } : {}),
+        recurring: recur !== "none",
+        ...(rotation ? { rotation: true } : {}),
+      },
+    })
+    createdCount++
   }
 
   revalidatePath("/messages")
