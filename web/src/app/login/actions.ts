@@ -1,9 +1,21 @@
 "use server"
 
-import { redirect } from "next/navigation"
 import { createSession, verifyCredentials } from "@/lib/auth"
 
-export type LoginState = { error?: string } | null
+export type LoginState =
+  | { error?: string }
+  | { ok: true; redirectTo: string }
+  | null
+
+/**
+ * Only allow internal, absolute paths as a redirect target.
+ * Rejects protocol-relative ("//evil.com") and external URLs — otherwise a
+ * crafted `?from=` could turn the login into an open redirect.
+ */
+function safeRedirect(from: string): string {
+  if (from.startsWith("/") && !from.startsWith("//")) return from
+  return "/messages"
+}
 
 export async function loginAction(
   _prev: LoginState,
@@ -22,5 +34,9 @@ export async function loginAction(
   }
 
   await createSession(username)
-  redirect(from || "/messages")
+  // Don't redirect() here: the Set-Cookie from createSession() must be
+  // committed by the browser before we navigate, otherwise the proxy doesn't
+  // see the session on the first request and the page fails to load. We return
+  // the target and let the client do a full navigation (see login-form.tsx).
+  return { ok: true, redirectTo: safeRedirect(from) }
 }
