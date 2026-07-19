@@ -75,6 +75,18 @@ const HOURS: string[] = Array.from({ length: 17 }, (_, i) => {
 
 type RecurOption = "none" | "weekly" | "monthly"
 
+// Value → label maps so base-ui's <SelectValue> shows the label (not the raw
+// value like "none") in the trigger when the popup is closed.
+const RECUR_ITEMS: Record<string, string> = {
+  none: "Pas de répétition",
+  weekly: "Toutes les semaines",
+  monthly: "Tous les mois",
+}
+const RECUR_COUNTS = [2, 3, 4, 5, 6, 8, 10, 12]
+const RECUR_COUNT_ITEMS: Record<string, string> = Object.fromEntries(
+  RECUR_COUNTS.map((n) => [String(n), `${n} occurrences`])
+)
+
 export function NewMessageForm({
   recipients,
   templates = [],
@@ -117,6 +129,13 @@ export function NewMessageForm({
   const sortedTemplates = useMemo(
     () => [...templates].sort((a, b) => a.nom.localeCompare(b.nom)),
     [templates]
+  )
+  const templateItems = useMemo(
+    () =>
+      Object.fromEntries(
+        sortedTemplates.map((t) => [String(t.id), t.nom])
+      ) as Record<string, string>,
+    [sortedTemplates]
   )
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -176,7 +195,11 @@ export function NewMessageForm({
                 <FileText className="size-3.5 text-muted-foreground" />
                 Modèle (optionnel)
               </Label>
-              <Select value={templateId} onValueChange={(v) => applyTemplate(v ?? "")}>
+              <Select
+                items={templateItems}
+                value={templateId}
+                onValueChange={(v) => applyTemplate(v ?? "")}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Pré-remplir avec un modèle…" />
                 </SelectTrigger>
@@ -319,6 +342,7 @@ export function NewMessageForm({
             </Label>
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px] gap-3">
               <Select
+                items={RECUR_ITEMS}
                 value={recur}
                 onValueChange={(v) => setRecur((v ?? "none") as RecurOption)}
               >
@@ -333,6 +357,7 @@ export function NewMessageForm({
               </Select>
               {recur !== "none" && (
                 <Select
+                  items={RECUR_COUNT_ITEMS}
                   value={recurCount}
                   onValueChange={(v) => setRecurCount(v ?? "4")}
                 >
@@ -340,7 +365,7 @@ export function NewMessageForm({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[2, 3, 4, 5, 6, 8, 10, 12].map((n) => (
+                    {RECUR_COUNTS.map((n) => (
                       <SelectItem key={n} value={String(n)}>
                         {n} occurrences
                       </SelectItem>

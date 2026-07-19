@@ -78,6 +78,14 @@ function isAdminOrAbove(role: CurrentUser["role"]): boolean {
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100, 200]
 
+// Value → label map so base-ui's <SelectValue> shows "Tous" instead of the raw
+// value "all" in the closed trigger.
+const STATUS_ITEMS: Record<string, string> = {
+  all: "Tous",
+  pending: "À venir",
+  sent: "Envoyés",
+}
+
 function csvEscape(s: string): string {
   if (s.includes('"') || s.includes(",") || s.includes("\n") || s.includes("\r")) {
     return `"${s.replace(/"/g, '""')}"`
@@ -141,6 +149,14 @@ export function MessagesTable({
     for (const m of messages) if (m.cree_par) set.add(m.cree_par)
     return Array.from(set).sort()
   }, [messages])
+
+  const creatorItems = useMemo(
+    () => ({
+      all: "Tous les auteurs",
+      ...Object.fromEntries(creators.map((c) => [c, c])),
+    }),
+    [creators]
+  )
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -321,6 +337,7 @@ export function MessagesTable({
 
         <div className="flex flex-wrap items-center gap-2">
           <Select
+            items={STATUS_ITEMS}
             value={status}
             onValueChange={(v) => setStatus((v ?? "all") as StatusFilter)}
           >
@@ -336,6 +353,7 @@ export function MessagesTable({
 
           {creators.length > 1 && (
             <Select
+              items={creatorItems}
               value={creator}
               onValueChange={(v) => setCreator(v ?? "all")}
             >
