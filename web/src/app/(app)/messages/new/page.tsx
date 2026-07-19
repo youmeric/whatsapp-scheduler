@@ -6,7 +6,14 @@ import { listTemplates } from "@/lib/db"
 import type { Template } from "@/lib/types"
 import { NewMessageForm } from "@/components/new-message-form"
 
-export default async function NewMessagePage() {
+export default async function NewMessagePage(props: {
+  searchParams: Promise<{
+    message?: string
+    destinataire?: string
+    heure?: string
+  }>
+}) {
+  const { message, destinataire, heure } = await props.searchParams
   const recipients = await getRecipients()
   const rows = listTemplates()
   const templates: Template[] = rows.map((r) => ({
@@ -41,7 +48,13 @@ export default async function NewMessagePage() {
         </div>
       </div>
 
-      <NewMessageForm recipients={recipients} templates={templates} />
+      <NewMessageForm
+        recipients={recipients}
+        templates={templates}
+        initialMessage={message}
+        initialDestinataires={destinataire ? [destinataire] : undefined}
+        initialHeure={heure}
+      />
     </div>
   )
 }

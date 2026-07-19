@@ -1,12 +1,14 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   CalendarClock,
   Check,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Download,
   Paperclip,
   Search,
@@ -91,6 +93,16 @@ function csvEscape(s: string): string {
     return `"${s.replace(/"/g, '""')}"`
   }
   return s
+}
+
+// Prefill the "new message" form from an existing message (date is left empty
+// so the user picks a fresh one). Attachments are not carried over.
+function duplicateHref(m: ScheduledMessage): string {
+  const params = new URLSearchParams()
+  params.set("message", m.message)
+  if (m.destinataire) params.set("destinataire", m.destinataire)
+  if (m.heure_envoi) params.set("heure", m.heure_envoi)
+  return `/messages/new?${params.toString()}`
 }
 
 export function MessagesTable({
@@ -186,9 +198,15 @@ export function MessagesTable({
     [filtered]
   )
 
-  useEffect(() => {
+  // Reset to page 1 when filters change. Adjusting state during render (the
+  // React-recommended alternative to setState-in-effect):
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const filterKey = `${query}|${status}|${creator}|${pageSize}`
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey)
     setPage(1)
-  }, [query, status, creator, pageSize])
+  }
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
   const safePage = Math.min(page, totalPages)
@@ -553,21 +571,22 @@ export function MessagesTable({
                         {m.cree_par}
                       </TableCell>
                       <TableCell className="text-right pr-4">
-                        {canManage ? (
-                          <div className="flex justify-end gap-1">
-                            {canEdit && (
-                              <EditMessageDialog
-                                message={m}
-                                recipients={recipients}
-                              />
-                            )}
+                        <div className="flex justify-end gap-1">
+                          <DuplicateMessageButton message={m} />
+                          {canEdit && (
+                            <EditMessageDialog
+                              message={m}
+                              recipients={recipients}
+                            />
+                          )}
+                          {canManage && (
                             <DeleteMessageButton
                               id={m.id}
                               recipientLabel={recipientLabel}
                               formattedDate={formatDate(m.date_envoi)}
                             />
-                          </div>
-                        ) : null}
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
@@ -670,21 +689,22 @@ export function MessagesTable({
                     <span className="text-xs text-muted-foreground">
                       par {m.cree_par}
                     </span>
-                    {canManage ? (
-                      <div className="flex items-center gap-1">
-                        {canEdit && (
-                          <EditMessageDialog
-                            message={m}
-                            recipients={recipients}
-                          />
-                        )}
+                    <div className="flex items-center gap-1">
+                      <DuplicateMessageButton message={m} />
+                      {canEdit && (
+                        <EditMessageDialog
+                          message={m}
+                          recipients={recipients}
+                        />
+                      )}
+                      {canManage && (
                         <DeleteMessageButton
                           id={m.id}
                           recipientLabel={recipientLabel}
                           formattedDate={formatDate(m.date_envoi)}
                         />
-                      </div>
-                    ) : null}
+                      )}
+                    </div>
                   </div>
                 </Card>
               )
@@ -744,6 +764,22 @@ export function MessagesTable({
         </>
       )}
     </div>
+  )
+}
+
+function DuplicateMessageButton({ message }: { message: ScheduledMessage }) {
+  return (
+    <Button
+      nativeButton={false}
+      render={<Link href={duplicateHref(message)} />}
+      variant="ghost"
+      size="icon"
+      className="text-muted-foreground hover:text-foreground size-9 md:size-7"
+      aria-label="Dupliquer ce message"
+      title="Dupliquer ce message"
+    >
+      <Copy />
+    </Button>
   )
 }
 

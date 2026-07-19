@@ -90,14 +90,23 @@ const RECUR_COUNT_ITEMS: Record<string, string> = Object.fromEntries(
 export function NewMessageForm({
   recipients,
   templates = [],
+  initialMessage,
+  initialDestinataires,
+  initialHeure,
 }: {
   recipients: Recipient[]
   templates?: Template[]
+  /** Optional prefill (used when duplicating an existing message). */
+  initialMessage?: string
+  initialDestinataires?: string[]
+  initialHeure?: string
 }) {
   const [date, setDate] = useState<Date | undefined>(undefined)
-  const [heure, setHeure] = useState<string>("10:00")
-  const [destinataires, setDestinataires] = useState<string[]>([])
-  const [message, setMessage] = useState<string>("")
+  const [heure, setHeure] = useState<string>(initialHeure ?? "10:00")
+  const [destinataires, setDestinataires] = useState<string[]>(
+    initialDestinataires ?? []
+  )
+  const [message, setMessage] = useState<string>(initialMessage ?? "")
   const [recur, setRecur] = useState<RecurOption>("none")
   const [recurCount, setRecurCount] = useState<string>("4")
   const [templateId, setTemplateId] = useState<string>("")
