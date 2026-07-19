@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { getSession } from "@/lib/auth"
 import { AppSidebar } from "@/components/app-sidebar"
+import { BotStatusBanner } from "@/components/bot-status-banner"
 import { NotificationsListener } from "@/components/notifications-listener"
 import { ThemeToggle } from "@/components/theme-toggle"
 import {
@@ -22,6 +23,7 @@ export default async function AppLayout({
     <SidebarProvider>
       <AppSidebar username={session.username} role={session.role} />
       <SidebarInset>
+        <BotStatusBanner />
         <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background/80 backdrop-blur px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mx-2 h-4" />
