@@ -49,7 +49,21 @@ export async function createMessageAction(
 
   const date_envoi = String(formData.get("date_envoi") ?? "")
   const heure_envoi_raw = String(formData.get("heure_envoi") ?? "").trim()
-  const destinataire = String(formData.get("destinataire") ?? "")
+  // Multiple recipients: "destinataires" is a comma-separated list of
+  // "<digits>@c.us" addresses. Fall back to the legacy single "destinataire"
+  // field for backward compatibility (e.g. during a rolling deploy).
+  const destinataires = Array.from(
+    new Set(
+      String(formData.get("destinataires") ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  )
+  if (destinataires.length === 0) {
+    const single = String(formData.get("destinataire") ?? "").trim()
+    if (single) destinataires.push(single)
+  }
   const message = String(formData.get("message") ?? "").trim()
   const attachment_url_raw = String(formData.get("attachment_url") ?? "").trim()
   const attachment_filename_raw = String(
@@ -75,8 +89,8 @@ export async function createMessageAction(
     }
     heure_envoi = heure_envoi_raw
   }
-  if (!destinataire) {
-    return { error: "Sélectionnez un destinataire." }
+  if (destinataires.length === 0) {
+    return { error: "Sélectionnez au moins un destinataire." }
   }
   if (!message) {
     return { error: "Le message ne peut pas être vide." }
@@ -96,42 +110,47 @@ export async function createMessageAction(
   const attachment_url = attachment_url_raw || undefined
   const attachment_filename = attachment_filename_raw || undefined
 
+  // One message per (recipient × date). N recipients and M recurrence dates
+  // therefore create N×M rows in the sheet.
+  const total = destinataires.length * dates.length
   let createdCount = 0
   const cree_le = nowLocalDateTime()
-  for (const d of dates) {
-    const id = randomUUID()
-    const result = await postMessage({
-      id,
-      date_envoi: d,
-      ...(heure_envoi ? { heure_envoi } : {}),
-      destinataire,
-      message,
-      cree_par: session.username,
-      cree_le,
-      ...(attachment_url ? { attachment_url } : {}),
-      ...(attachment_filename ? { attachment_filename } : {}),
-    })
-    if (!result.ok) {
-      // Stop on first error; report partial success if any.
-      if (createdCount === 0) {
-        return { error: `Erreur lors de l'enregistrement : ${result.error}` }
-      }
-      return {
-        error: `Enregistré ${createdCount}/${dates.length}, puis erreur : ${result.error}`,
-      }
-    }
-    logAudit({
-      username: session.username,
-      action: "create_message",
-      target: id,
-      details: {
+  for (const destinataire of destinataires) {
+    for (const d of dates) {
+      const id = randomUUID()
+      const result = await postMessage({
+        id,
         date_envoi: d,
-        destinataire,
         ...(heure_envoi ? { heure_envoi } : {}),
-        recurring: recur !== "none",
-      },
-    })
-    createdCount++
+        destinataire,
+        message,
+        cree_par: session.username,
+        cree_le,
+        ...(attachment_url ? { attachment_url } : {}),
+        ...(attachment_filename ? { attachment_filename } : {}),
+      })
+      if (!result.ok) {
+        // Stop on first error; report partial success if any.
+        if (createdCount === 0) {
+          return { error: `Erreur lors de l'enregistrement : ${result.error}` }
+        }
+        return {
+          error: `Enregistré ${createdCount}/${total}, puis erreur : ${result.error}`,
+        }
+      }
+      logAudit({
+        username: session.username,
+        action: "create_message",
+        target: id,
+        details: {
+          date_envoi: d,
+          destinataire,
+          ...(heure_envoi ? { heure_envoi } : {}),
+          recurring: recur !== "none",
+        },
+      })
+      createdCount++
+    }
   }
 
   revalidatePath("/messages")

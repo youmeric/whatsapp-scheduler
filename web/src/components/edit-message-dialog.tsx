@@ -35,7 +35,7 @@ import {
   type AttachmentValue,
 } from "@/components/attachment-picker"
 import { cn } from "@/lib/utils"
-import { digitsOnly, toWhatsappAddress } from "@/lib/phone"
+import { digitsOnly, labelForAddress, toWhatsappAddress } from "@/lib/phone"
 import type { Recipient, ScheduledMessage } from "@/lib/types"
 import {
   updateMessageAction,
@@ -257,7 +257,17 @@ export function EditMessageDialog({
                 onValueChange={(v) => setDestinataire(v ?? "")}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Sélectionner un destinataire" />
+                  {/* base-ui's SelectValue shows the raw value ("…@c.us"); we
+                      render the recipient's name instead. */}
+                  {destinataire ? (
+                    <span className="line-clamp-1">
+                      {labelForAddress(destinataire, recipients)}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      Sélectionner un destinataire
+                    </span>
+                  )}
                 </SelectTrigger>
                 <SelectContent>
                   {recipients.map((r) => {

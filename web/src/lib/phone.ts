@@ -31,3 +31,17 @@ export function buildRecipientNameByDigits(
   }
   return map
 }
+
+/**
+ * Human label for a stored destinataire ("<digits>@c.us"): the matching
+ * recipient's name if it's still in the carnet, otherwise the bare digits.
+ * Used to show names instead of raw numbers in the destinataire selects.
+ */
+export function labelForAddress(
+  address: string,
+  recipients: Recipient[]
+): string {
+  const digits = digitsOnly(address)
+  const match = recipients.find((r) => digitsOnly(r.numero) === digits)
+  return match ? match.nom : digits
+}

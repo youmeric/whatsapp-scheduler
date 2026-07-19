@@ -1,12 +1,23 @@
 "use client"
 
 import { useActionState, useMemo, useState, useTransition } from "react"
-import { CalendarIcon, FileText, Paperclip, Repeat } from "lucide-react"
+import {
+  CalendarIcon,
+  Check,
+  ChevronDownIcon,
+  FileText,
+  Paperclip,
+  Repeat,
+  Search,
+  X,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Popover,
@@ -73,7 +84,7 @@ export function NewMessageForm({
 }) {
   const [date, setDate] = useState<Date | undefined>(undefined)
   const [heure, setHeure] = useState<string>("10:00")
-  const [destinataire, setDestinataire] = useState<string>("")
+  const [destinataires, setDestinataires] = useState<string[]>([])
   const [message, setMessage] = useState<string>("")
   const [recur, setRecur] = useState<RecurOption>("none")
   const [recurCount, setRecurCount] = useState<string>("4")
@@ -94,7 +105,14 @@ export function NewMessageForm({
   const today = startOfToday()
   const charsLeft = MAX_LEN - message.length
   const canSubmit =
-    !!date && !!destinataire && message.trim().length > 0 && charsLeft >= 0
+    !!date &&
+    destinataires.length > 0 &&
+    message.trim().length > 0 &&
+    charsLeft >= 0
+
+  // Total rows created = recipients × recurrence occurrences.
+  const occurrences = recur === "none" ? 1 : Number(recurCount)
+  const totalMessages = destinataires.length * occurrences
 
   const sortedTemplates = useMemo(
     () => [...templates].sort((a, b) => a.nom.localeCompare(b.nom)),
@@ -133,7 +151,11 @@ export function NewMessageForm({
             value={date ? toIsoDate(date) : ""}
           />
           <input type="hidden" name="heure_envoi" value={heure} />
-          <input type="hidden" name="destinataire" value={destinataire} />
+          <input
+            type="hidden"
+            name="destinataires"
+            value={destinataires.join(",")}
+          />
           <input type="hidden" name="recur" value={recur} />
           <input type="hidden" name="recur_count" value={recurCount} />
           <input
@@ -233,31 +255,18 @@ export function NewMessageForm({
           </p>
 
           <div className="space-y-2">
-            <Label>Destinataire</Label>
-            <Select
-              value={destinataire}
-              onValueChange={(v) => setDestinataire(v ?? "")}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Sélectionner un destinataire" />
-              </SelectTrigger>
-              <SelectContent>
-                {recipients.map((r) => {
-                  // The bot expects the wppconnect chat-id: "<digits>@c.us".
-                  const address = toWhatsappAddress(r.numero)
-                  return (
-                    <SelectItem key={address || r.nom} value={address}>
-                      <div className="flex flex-col">
-                        <span>{r.nom}</span>
-                        <span className="text-xs text-muted-foreground font-mono">
-                          {digitsOnly(r.numero)}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  )
-                })}
-              </SelectContent>
-            </Select>
+            <Label>Destinataire{destinataires.length > 1 ? "s" : ""}</Label>
+            <RecipientMultiSelect
+              recipients={recipients}
+              selected={destinataires}
+              onChange={setDestinataires}
+            />
+            {destinataires.length > 1 && (
+              <p className="text-xs text-muted-foreground">
+                Le message sera programmé pour {destinataires.length}{" "}
+                destinataires.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -342,11 +351,14 @@ export function NewMessageForm({
             </div>
             {recur !== "none" && (
               <p className="text-xs text-muted-foreground">
-                {recurCount} messages identiques seront créés (un{" "}
-                {recur === "weekly"
-                  ? "tous les 7 jours"
-                  : "tous les mois"}{" "}
-                à partir de la date choisie).
+                {recurCount} envois {recur === "weekly"
+                  ? "espacés de 7 jours"
+                  : "mensuels"}{" "}
+                à partir de la date choisie
+                {destinataires.length > 1
+                  ? `, pour chacun des ${destinataires.length} destinataires (${totalMessages} messages au total)`
+                  : ""}
+                .
               </p>
             )}
           </div>
@@ -364,12 +376,167 @@ export function NewMessageForm({
           >
             {isPending
               ? "Enregistrement…"
-              : recur === "none"
+              : totalMessages <= 1
                 ? "Programmer le message"
-                : `Programmer ${recurCount} messages`}
+                : `Programmer ${totalMessages} messages`}
           </Button>
         </CardFooter>
       </form>
     </Card>
+  )
+}
+
+type RecipientOption = {
+  address: string
+  nom: string
+  digits: string
+}
+
+/**
+ * Multi-select for recipients: a popover with a search box and a checkbox
+ * list. Selected values are the wppconnect chat-ids ("<digits>@c.us").
+ */
+function RecipientMultiSelect({
+  recipients,
+  selected,
+  onChange,
+}: {
+  recipients: Recipient[]
+  selected: string[]
+  onChange: (next: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+
+  const options = useMemo<RecipientOption[]>(
+    () =>
+      recipients
+        .map((r) => ({
+          address: toWhatsappAddress(r.numero),
+          nom: r.nom,
+          digits: digitsOnly(r.numero),
+        }))
+        .filter((o) => o.address),
+    [recipients]
+  )
+
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const qDigits = query.replace(/\D/g, "")
+    if (!q) return options
+    return options.filter(
+      (o) =>
+        o.nom.toLowerCase().includes(q) ||
+        (qDigits.length > 0 && o.digits.includes(qDigits))
+    )
+  }, [options, query])
+
+  const selectedNames = useMemo(
+    () =>
+      options.filter((o) => selectedSet.has(o.address)).map((o) => o.nom),
+    [options, selectedSet]
+  )
+
+  function toggle(address: string) {
+    if (selectedSet.has(address)) {
+      onChange(selected.filter((a) => a !== address))
+    } else {
+      onChange([...selected, address])
+    }
+  }
+
+  const triggerLabel =
+    selected.length === 0
+      ? "Sélectionner un ou plusieurs destinataires"
+      : selected.length <= 2
+        ? selectedNames.join(", ")
+        : `${selected.length} destinataires sélectionnés`
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={(props) => (
+          <Button
+            {...props}
+            type="button"
+            variant="outline"
+            size="lg"
+            className={cn(
+              "w-full justify-between font-normal",
+              selected.length === 0 && "text-muted-foreground"
+            )}
+          >
+            <span className="line-clamp-1 text-left">{triggerLabel}</span>
+            <ChevronDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
+          </Button>
+        )}
+      />
+      <PopoverContent
+        className="w-(--anchor-width) min-w-60 p-0"
+        align="start"
+      >
+        <div className="border-b p-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Rechercher un contact…"
+              className="h-9 pl-8"
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="max-h-64 overflow-y-auto p-1">
+          {filtered.length === 0 ? (
+            <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+              Aucun contact trouvé
+            </p>
+          ) : (
+            filtered.map((o) => {
+              const checked = selectedSet.has(o.address)
+              return (
+                <button
+                  key={o.address}
+                  type="button"
+                  onClick={() => toggle(o.address)}
+                  className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm hover:bg-accent"
+                >
+                  <Checkbox checked={checked} className="pointer-events-none" />
+                  <div className="flex flex-col">
+                    <span>{o.nom}</span>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {o.digits}
+                    </span>
+                  </div>
+                  {checked && (
+                    <Check className="ml-auto size-4 text-primary" />
+                  )}
+                </button>
+              )
+            })
+          )}
+        </div>
+        {selected.length > 0 && (
+          <div className="flex items-center justify-between border-t px-2 py-1.5">
+            <span className="text-xs text-muted-foreground">
+              {selected.length} sélectionné{selected.length > 1 ? "s" : ""}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7"
+              onClick={() => onChange([])}
+            >
+              <X className="size-3.5" />
+              Tout effacer
+            </Button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }
