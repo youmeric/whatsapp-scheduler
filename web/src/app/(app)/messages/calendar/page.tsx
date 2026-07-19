@@ -1,14 +1,12 @@
-import { Suspense } from "react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { CalendarDays, Plus } from "lucide-react"
+import { List, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getMessages, getRecipients } from "@/lib/data"
 import { getSession } from "@/lib/auth"
-import { MessagesTable } from "@/components/messages-table"
-import { StatsCards } from "@/components/stats-cards"
+import { MessagesCalendar } from "@/components/messages-calendar"
 
-export default async function MessagesPage() {
+export default async function MessagesCalendarPage() {
   const session = await getSession()
   if (!session) redirect("/login")
   const [messages, recipients] = await Promise.all([
@@ -21,21 +19,21 @@ export default async function MessagesPage() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Messages programmés
+            Calendrier des envois
           </h1>
           <p className="text-sm text-muted-foreground">
-            {messages.filter((m) => !m.envoye).length} en attente ·{" "}
+            {messages.filter((m) => !m.envoye).length} à venir ·{" "}
             {messages.filter((m) => m.envoye).length} envoyés
           </p>
         </div>
         <div className="flex gap-2">
           <Button
             nativeButton={false}
-            render={<Link href="/messages/calendar" />}
+            render={<Link href="/messages" />}
             variant="outline"
           >
-            <CalendarDays />
-            Calendrier
+            <List />
+            Liste
           </Button>
           <Button nativeButton={false} render={<Link href="/messages/new" />}>
             <Plus />
@@ -44,16 +42,7 @@ export default async function MessagesPage() {
         </div>
       </div>
 
-      <StatsCards messages={messages} />
-
-      {/* Suspense required because MessagesTable uses useSearchParams. */}
-      <Suspense fallback={null}>
-        <MessagesTable
-          messages={messages}
-          recipients={recipients}
-          currentUser={{ username: session.username, role: session.role }}
-        />
-      </Suspense>
+      <MessagesCalendar messages={messages} recipients={recipients} />
     </div>
   )
 }
