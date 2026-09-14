@@ -77,6 +77,14 @@ export async function createMessageAction(
     formData.get("attachment_filename") ?? ""
   ).trim()
 
+  // Sondage. type="poll" → message = question, poll_options = choix ("a|b|c").
+  const isPoll = String(formData.get("type") ?? "text") === "poll"
+  const pollOptions = String(formData.get("poll_options") ?? "")
+    .split("|")
+    .map((o) => o.trim())
+    .filter(Boolean)
+  const pollMulti = String(formData.get("poll_multi") ?? "") === "on"
+
   // Recurring options. "none" = single message; "weekly" / "monthly" repeat.
   const recur = String(formData.get("recur") ?? "none")
   const recurCountRaw = Number(formData.get("recur_count") ?? "1")
@@ -100,10 +108,22 @@ export async function createMessageAction(
     return { error: "Sélectionnez au moins un destinataire." }
   }
   if (!message) {
-    return { error: "Le message ne peut pas être vide." }
+    return {
+      error: isPoll
+        ? "La question du sondage ne peut pas être vide."
+        : "Le message ne peut pas être vide.",
+    }
   }
   if (message.length > 1500) {
     return { error: "Message trop long (max 1500 caractères)." }
+  }
+  if (isPoll) {
+    if (pollOptions.length < 2) {
+      return { error: "Un sondage nécessite au moins 2 choix." }
+    }
+    if (pollOptions.length > 12) {
+      return { error: "Un sondage accepte 12 choix maximum." }
+    }
   }
 
   // Build the list of dates we need to create.
@@ -170,8 +190,12 @@ export async function createMessageAction(
       message: finalMessage,
       cree_par: session.username,
       cree_le,
-      ...(attachment_url ? { attachment_url } : {}),
-      ...(attachment_filename ? { attachment_filename } : {}),
+      // Un sondage n'a pas de pièce jointe.
+      ...(!isPoll && attachment_url ? { attachment_url } : {}),
+      ...(!isPoll && attachment_filename ? { attachment_filename } : {}),
+      ...(isPoll
+        ? { type: "poll", poll_options: pollOptions, poll_multi: pollMulti }
+        : {}),
     })
     if (!result.ok) {
       // Stop on first error; report partial success if any.

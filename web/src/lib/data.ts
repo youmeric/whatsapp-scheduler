@@ -95,6 +95,20 @@ function normalizeMessage(raw: unknown): ScheduledMessage | null {
     r.pause === "true" ||
     r.pause === 1 ||
     r.pause === "1"
+  const type = r.type === "poll" ? "poll" : "text"
+  const poll_options =
+    typeof r.poll_options === "string" && r.poll_options.trim().length > 0
+      ? r.poll_options
+          .split("|")
+          .map((o) => o.trim())
+          .filter(Boolean)
+      : undefined
+  const poll_multi =
+    r.poll_multi === true ||
+    r.poll_multi === "TRUE" ||
+    r.poll_multi === "true" ||
+    r.poll_multi === 1 ||
+    r.poll_multi === "1"
   return {
     id: String(r.id),
     date_envoi: String(r.date_envoi),
@@ -113,6 +127,9 @@ function normalizeMessage(raw: unknown): ScheduledMessage | null {
     attachment_filename,
     erreur,
     pause,
+    type,
+    poll_options,
+    poll_multi,
   }
 }
 
@@ -290,7 +307,15 @@ export async function postMessage(
   msg: Omit<ScheduledMessage, "envoye"> & { envoye?: boolean }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const base = getBase()
-  const payload = { ...msg, envoye: msg.envoye ?? false }
+  // Sérialise les options de sondage en chaîne "a|b|c" pour la cellule Sheet.
+  const { poll_options, ...rest } = msg
+  const payload = {
+    ...rest,
+    envoye: msg.envoye ?? false,
+    ...(poll_options
+      ? { poll_options: poll_options.join("|") }
+      : {}),
+  }
 
   if (!base) {
     // No backend configured — log and pretend success so frontend dev still works.

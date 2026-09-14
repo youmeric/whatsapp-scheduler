@@ -35,6 +35,16 @@ export type ScheduledMessage = {
    * (pause != TRUE). Si la colonne n'existe pas, le champ reste false.
    */
   pause?: boolean
+  /**
+   * Type de message : "text" (défaut) ou "poll" (sondage WhatsApp).
+   * Pour un sondage : `message` = la question, `poll_options` = les choix,
+   * `poll_multi` = réponses multiples autorisées.
+   * Nécessite les colonnes `type`, `poll_options`, `poll_multi` dans le Sheet
+   * et le support dans le bot (client.sendPollMessage).
+   */
+  type?: "text" | "poll"
+  poll_options?: string[]
+  poll_multi?: boolean
 }
 
 export type Recipient = {

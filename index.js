@@ -120,7 +120,16 @@ async function fetchAttachment(url, fallbackFilename) {
 
 // Webhook d'envoi
 app.post('/send', async (req, res) => {
-  const { to, message, attachment_url, attachment_filename, id } = req.body;
+  const {
+    to,
+    message,
+    attachment_url,
+    attachment_filename,
+    id,
+    type,
+    poll_options,
+    poll_multi,
+  } = req.body;
 
   if (!client) {
     return res.status(503).json({ ok: false, error: 'WhatsApp non prêt' });
@@ -132,7 +141,28 @@ app.post('/send', async (req, res) => {
   try {
     let result;
 
-    if (attachment_url) {
+    if (type === 'poll') {
+      // ─── Sondage ────────────────────────────────────────────────────
+      const options = String(poll_options || '')
+        .split('|')
+        .map((o) => o.trim())
+        .filter(Boolean);
+      if (!message || options.length < 2) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Sondage invalide (question + 2 choix minimum)',
+        });
+      }
+      const multi =
+        poll_multi === true ||
+        poll_multi === 'TRUE' ||
+        poll_multi === 'true' ||
+        poll_multi === 1 ||
+        poll_multi === '1';
+      result = await client.sendPollMessage(to, message, options, {
+        selectableCount: multi ? options.length : 1,
+      });
+    } else if (attachment_url) {
       // ─── Avec pièce jointe ──────────────────────────────────────────
       const { dataUrl, mime, filename } = await fetchAttachment(
         attachment_url,

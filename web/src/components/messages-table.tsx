@@ -15,6 +15,7 @@ import {
   ChevronsUpDown,
   Copy,
   Download,
+  ListChecks,
   Pause,
   Paperclip,
   Play,
@@ -602,7 +603,8 @@ export function MessagesTable({
                   const canManage =
                     isAdminOrAbove(currentUser.role) ||
                     m.cree_par === currentUser.username
-                  const canEdit = canManage && !m.envoye
+                  const isPoll = m.type === "poll"
+                  const canEdit = canManage && !m.envoye && !isPoll
                   const isChecked = selected.has(m.id)
                   return (
                     <TableRow key={m.id} data-selected={isChecked}>
@@ -636,6 +638,12 @@ export function MessagesTable({
                       </TableCell>
                       <TableCell className="max-w-[420px] text-muted-foreground">
                         <div className="flex items-center gap-1.5">
+                          {isPoll ? (
+                            <ListChecks
+                              className="size-3.5 shrink-0 text-foreground"
+                              aria-label="Sondage"
+                            />
+                          ) : null}
                           {m.attachment_url ? (
                             <a
                               href={m.attachment_url}
@@ -651,7 +659,15 @@ export function MessagesTable({
                               <Paperclip className="size-3.5" />
                             </a>
                           ) : null}
-                          <span className="truncate">{m.message}</span>
+                          <span className="truncate">
+                            {m.message}
+                            {isPoll && m.poll_options?.length ? (
+                              <span className="text-xs">
+                                {" "}
+                                · {m.poll_options.length} choix
+                              </span>
+                            ) : null}
+                          </span>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -671,12 +687,16 @@ export function MessagesTable({
                               paused={Boolean(m.pause)}
                             />
                           )}
-                          <SaveTemplateButton
-                            message={m.message}
-                            attachmentUrl={m.attachment_url}
-                            attachmentFilename={m.attachment_filename}
-                          />
-                          <DuplicateMessageButton message={m} />
+                          {!isPoll && (
+                            <>
+                              <SaveTemplateButton
+                                message={m.message}
+                                attachmentUrl={m.attachment_url}
+                                attachmentFilename={m.attachment_filename}
+                              />
+                              <DuplicateMessageButton message={m} />
+                            </>
+                          )}
                           {canEdit && (
                             <EditMessageDialog
                               message={m}
@@ -710,7 +730,8 @@ export function MessagesTable({
               const canManage =
                 isAdminOrAbove(currentUser.role) ||
                 m.cree_par === currentUser.username
-              const canEdit = canManage && !m.envoye
+              const isPoll = m.type === "poll"
+              const canEdit = canManage && !m.envoye && !isPoll
               const isChecked = selected.has(m.id)
               return (
                 <Card
@@ -758,8 +779,14 @@ export function MessagesTable({
                   </div>
 
                   {/* Message */}
-                  <div className="pl-6 text-sm text-muted-foreground line-clamp-3">
-                    {m.message}
+                  <div className="pl-6 text-sm text-muted-foreground">
+                    {isPoll ? (
+                      <span className="mb-0.5 inline-flex items-center gap-1 text-xs font-medium text-foreground">
+                        <ListChecks className="size-3.5" />
+                        Sondage · {m.poll_options?.length ?? 0} choix
+                      </span>
+                    ) : null}
+                    <div className="line-clamp-3">{m.message}</div>
                   </div>
 
                   {/* Attachment */}
@@ -801,12 +828,16 @@ export function MessagesTable({
                           paused={Boolean(m.pause)}
                         />
                       )}
-                      <SaveTemplateButton
-                        message={m.message}
-                        attachmentUrl={m.attachment_url}
-                        attachmentFilename={m.attachment_filename}
-                      />
-                      <DuplicateMessageButton message={m} />
+                      {!isPoll && (
+                        <>
+                          <SaveTemplateButton
+                            message={m.message}
+                            attachmentUrl={m.attachment_url}
+                            attachmentFilename={m.attachment_filename}
+                          />
+                          <DuplicateMessageButton message={m} />
+                        </>
+                      )}
                       {canEdit && (
                         <EditMessageDialog
                           message={m}

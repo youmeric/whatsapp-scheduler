@@ -6,10 +6,13 @@ import {
   Check,
   ChevronDownIcon,
   FileText,
+  ListChecks,
+  MessageSquare,
   Paperclip,
   Plus,
   Repeat,
   Search,
+  Trash2,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -20,6 +23,7 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Popover,
   PopoverContent,
@@ -110,6 +114,9 @@ export function NewMessageForm({
     initialDestinataires ?? []
   )
   const [message, setMessage] = useState<string>(initialMessage ?? "")
+  const [type, setType] = useState<"text" | "poll">("text")
+  const [pollOptions, setPollOptions] = useState<string[]>(["", ""])
+  const [pollMulti, setPollMulti] = useState<boolean>(false)
   const [recur, setRecur] = useState<RecurOption>("none")
   const [recurCount, setRecurCount] = useState<string>("4")
   const [rotation, setRotation] = useState<boolean>(false)
@@ -129,11 +136,27 @@ export function NewMessageForm({
 
   const today = startOfToday()
   const charsLeft = MAX_LEN - message.length
+  const validPollOptions = pollOptions
+    .map((o) => o.trim())
+    .filter(Boolean)
   const canSubmit =
     !!date &&
     destinataires.length > 0 &&
     message.trim().length > 0 &&
-    charsLeft >= 0
+    charsLeft >= 0 &&
+    (type !== "poll" || validPollOptions.length >= 2)
+
+  function setOption(i: number, val: string) {
+    setPollOptions((prev) => prev.map((o, idx) => (idx === i ? val : o)))
+  }
+  function addOption() {
+    setPollOptions((prev) => (prev.length >= 12 ? prev : [...prev, ""]))
+  }
+  function removeOption(i: number) {
+    setPollOptions((prev) =>
+      prev.length <= 2 ? prev : prev.filter((_, idx) => idx !== i)
+    )
+  }
 
   // Rotation only applies with a recurrence.
   const rotationActive = rotation && recur !== "none"
@@ -219,6 +242,21 @@ export function NewMessageForm({
           />
           <input type="hidden" name="recur" value={recur} />
           <input type="hidden" name="recur_count" value={recurCount} />
+          <input type="hidden" name="type" value={type} />
+          {type === "poll" && (
+            <>
+              <input
+                type="hidden"
+                name="poll_options"
+                value={validPollOptions.join("|")}
+              />
+              <input
+                type="hidden"
+                name="poll_multi"
+                value={pollMulti ? "on" : ""}
+              />
+            </>
+          )}
           <input
             type="hidden"
             name="rotation"
@@ -235,8 +273,32 @@ export function NewMessageForm({
             value={attachment?.filename ?? ""}
           />
 
-          {/* Template picker — only if there are templates */}
-          {sortedTemplates.length > 0 && (
+          {/* Type de message : message texte ou sondage */}
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+            <Button
+              type="button"
+              variant={type === "text" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setType("text")}
+              className="gap-1.5"
+            >
+              <MessageSquare className="size-4" />
+              Message
+            </Button>
+            <Button
+              type="button"
+              variant={type === "poll" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setType("poll")}
+              className="gap-1.5"
+            >
+              <ListChecks className="size-4" />
+              Sondage
+            </Button>
+          </div>
+
+          {/* Template picker — only if there are templates (message texte) */}
+          {type === "text" && sortedTemplates.length > 0 && (
             <div className="space-y-2">
               <Label className="flex items-center gap-1.5">
                 <FileText className="size-3.5 text-muted-foreground" />
@@ -342,7 +404,9 @@ export function NewMessageForm({
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label htmlFor="message">Message</Label>
+              <Label htmlFor="message">
+                {type === "poll" ? "Question du sondage" : "Message"}
+              </Label>
               <span
                 className={cn(
                   "text-xs tabular-nums",
@@ -354,24 +418,37 @@ export function NewMessageForm({
                 {charsLeft} caractère{Math.abs(charsLeft) > 1 ? "s" : ""}
               </span>
             </div>
-            <MessageEditor
-              id="message"
-              name="message"
-              value={message}
-              onChange={setMessage}
-              rows={6}
-              placeholder="Bonjour, …"
-              required
-              previewContext={previewContext}
-            />
-            <p className="text-xs text-muted-foreground">
-              Formats WhatsApp pris en charge :{" "}
-              <code className="font-mono">*gras*</code>,{" "}
-              <code className="font-mono">_italique_</code>,{" "}
-              <code className="font-mono">~barré~</code>,{" "}
-              <code className="font-mono">```code```</code>,{" "}
-              <code className="font-mono">{"> citation"}</code>.
-            </p>
+            {type === "text" ? (
+              <MessageEditor
+                id="message"
+                name="message"
+                value={message}
+                onChange={setMessage}
+                rows={6}
+                placeholder="Bonjour, …"
+                required
+                previewContext={previewContext}
+              />
+            ) : (
+              <Textarea
+                id="message"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={3}
+                placeholder="Ta question… (ex. Dispo pour la réunion ?)"
+                required
+              />
+            )}
+            {type === "text" ? (
+              <p className="text-xs text-muted-foreground">
+                Formats WhatsApp pris en charge :{" "}
+                <code className="font-mono">*gras*</code>,{" "}
+                <code className="font-mono">_italique_</code>,{" "}
+                <code className="font-mono">~barré~</code>,{" "}
+                <code className="font-mono">```code```</code>,{" "}
+                <code className="font-mono">{"> citation"}</code>.
+              </p>
+            ) : null}
             <p className="text-xs text-muted-foreground">
               Personnalisation :{" "}
               <code className="font-mono">{"{nom}"}</code>,{" "}
@@ -385,14 +462,67 @@ export function NewMessageForm({
             </p>
           </div>
 
-          {/* Attachment */}
-          <div className="space-y-2 rounded-lg border border-dashed p-3">
-            <Label className="flex items-center gap-1.5">
-              <Paperclip className="size-3.5 text-muted-foreground" />
-              Pièce jointe (optionnel)
-            </Label>
-            <AttachmentPicker value={attachment} onChange={setAttachment} />
-          </div>
+          {/* Poll options — sondage uniquement */}
+          {type === "poll" && (
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <Label className="flex items-center gap-1.5">
+                <ListChecks className="size-3.5 text-muted-foreground" />
+                Choix du sondage ({validPollOptions.length})
+              </Label>
+              <div className="space-y-2">
+                {pollOptions.map((o, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      value={o}
+                      onChange={(e) => setOption(i, e.target.value)}
+                      placeholder={`Choix ${i + 1}`}
+                      maxLength={100}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeOption(i)}
+                      disabled={pollOptions.length <= 2}
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                      aria-label={`Retirer le choix ${i + 1}`}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              {pollOptions.length < 12 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addOption}
+                >
+                  <Plus />
+                  Ajouter un choix
+                </Button>
+              )}
+              <label className="flex items-center gap-2 text-sm pt-1">
+                <Checkbox
+                  checked={pollMulti}
+                  onCheckedChange={(v) => setPollMulti(Boolean(v))}
+                />
+                Autoriser plusieurs réponses
+              </label>
+            </div>
+          )}
+
+          {/* Attachment — message texte uniquement */}
+          {type === "text" && (
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <Label className="flex items-center gap-1.5">
+                <Paperclip className="size-3.5 text-muted-foreground" />
+                Pièce jointe (optionnel)
+              </Label>
+              <AttachmentPicker value={attachment} onChange={setAttachment} />
+            </div>
+          )}
 
           {/* Recurrence */}
           <div className="space-y-2 rounded-lg border border-dashed p-3">
@@ -490,9 +620,13 @@ export function NewMessageForm({
           >
             {isPending
               ? "Enregistrement…"
-              : totalMessages <= 1
-                ? "Programmer le message"
-                : `Programmer ${totalMessages} messages`}
+              : type === "poll"
+                ? totalMessages <= 1
+                  ? "Programmer le sondage"
+                  : `Programmer ${totalMessages} sondages`
+                : totalMessages <= 1
+                  ? "Programmer le message"
+                  : `Programmer ${totalMessages} messages`}
           </Button>
         </CardFooter>
       </form>
