@@ -10,6 +10,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
+import { BUILD_TIME, displayVersion } from "@/lib/version"
 
 export default async function AppLayout({
   children,
@@ -29,6 +30,12 @@ export default async function AppLayout({
           <Separator orientation="vertical" className="mx-2 h-4" />
           <span className="text-sm text-muted-foreground">
             WhatsApp Scheduler
+          </span>
+          <span
+            className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+            title={BUILD_TIME ? `Version ${displayVersion()} · build ${BUILD_TIME}` : `Version ${displayVersion()}`}
+          >
+            v{displayVersion()}
           </span>
           <div className="ml-auto flex items-center gap-1">
             <ThemeToggle />

@@ -21,6 +21,13 @@ FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Version injectée par GitHub Actions (build-args) et inlinée par Next.js
+# (préfixe NEXT_PUBLIC_). Valeurs par défaut pour un build local.
+ARG APP_VERSION=dev
+ARG BUILD_TIME=""
+ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION
+ENV NEXT_PUBLIC_BUILD_TIME=$BUILD_TIME
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
