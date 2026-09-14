@@ -6,6 +6,30 @@ app.use(express.json({ limit: '20mb' })); // marge si n8n forward du base64
 
 let client = null;
 
+// Correspondance id-WhatsApp -> notre id de message, remplie à l'envoi et
+// utilisée par onAck pour renvoyer l'accusé au site. Bornée pour éviter que
+// la map grossisse indéfiniment.
+const sentMap = new Map();
+function rememberSent(waId, ourId) {
+  if (!waId || !ourId) return;
+  if (sentMap.size > 5000) {
+    // supprime la plus ancienne entrée
+    const firstKey = sentMap.keys().next().value;
+    if (firstKey !== undefined) sentMap.delete(firstKey);
+  }
+  sentMap.set(String(waId), String(ourId));
+}
+function extractWaId(result) {
+  if (!result) return '';
+  const id = result.id ?? result;
+  if (typeof id === 'string') return id;
+  return String(id?._serialized || id?.id?._serialized || id || '');
+}
+
+// URL publique du site (pour poster les accusés). Ex: https://whatsapp.nas-nexus.fr
+const SITE_URL = (process.env.SITE_URL || '').replace(/\/+$/, '');
+const SITE_API_KEY = process.env.SITE_API_KEY || '';
+
 // Démarrage WhatsApp
 wppconnect.create({
   session: 'whatsapp-bot',
@@ -37,7 +61,6 @@ wppconnect.create({
   // 🔁 Reconnexion automatique si déconnexion
   client.onStateChange((state) => {
     console.log('State changed:', state);
-
     if (
       state === 'CONFLICT' ||
       state === 'UNPAIRED' ||
@@ -48,6 +71,26 @@ wppconnect.create({
     }
   });
 
+  // 📩 Accusés de réception : envoyé (1) → reçu (2) → lu (3) → écouté (4).
+  // On relaie au site l'accusé pour NOTRE id de message.
+  client.onAck(async (ack) => {
+    try {
+      const waId = extractWaId(ack);
+      const ourId = sentMap.get(waId);
+      if (!ourId) return; // pas un message qu'on a envoyé (ou déjà oublié)
+      if (!SITE_URL) return; // SITE_URL non configuré → on ignore
+      await fetch(`${SITE_URL}/api/ack`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': SITE_API_KEY,
+        },
+        body: JSON.stringify({ id: ourId, ack: ack.ack }),
+      });
+    } catch (err) {
+      console.error('Relai accusé échoué:', err.message || err);
+    }
+  });
 })
 .catch((err) => {
   console.error('Erreur WhatsApp:', err);
@@ -55,13 +98,12 @@ wppconnect.create({
 
 
 /**
- * Récupère un fichier depuis le site (https://whatsapp.nas-nexus.fr/api/files/…)
- * en envoyant l'X-API-Key. Renvoie { dataUrl, mime, filename }.
+ * Récupère un fichier depuis le site (https://<site>/api/files/…) en envoyant
+ * l'X-API-Key. Renvoie { dataUrl, mime, filename }.
  */
 async function fetchAttachment(url, fallbackFilename) {
-  const apiKey = process.env.SITE_API_KEY || '';
   const response = await fetch(url, {
-    headers: { 'X-API-Key': apiKey },
+    headers: { 'X-API-Key': SITE_API_KEY },
   });
   if (!response.ok) {
     throw new Error(`fetch ${response.status} ${response.statusText}`);
@@ -70,7 +112,6 @@ async function fetchAttachment(url, fallbackFilename) {
   const base64 = buf.toString('base64');
   const mime = response.headers.get('content-type') || 'application/octet-stream';
   const dataUrl = `data:${mime};base64,${base64}`;
-  // Si le filename n'est pas fourni, on le devine depuis l'URL.
   const filename =
     fallbackFilename ||
     decodeURIComponent(new URL(url).pathname.split('/').pop() || 'fichier');
@@ -79,7 +120,7 @@ async function fetchAttachment(url, fallbackFilename) {
 
 // Webhook d'envoi
 app.post('/send', async (req, res) => {
-  const { to, message, attachment_url, attachment_filename } = req.body;
+  const { to, message, attachment_url, attachment_filename, id } = req.body;
 
   if (!client) {
     return res.status(503).json({ ok: false, error: 'WhatsApp non prêt' });
@@ -89,6 +130,8 @@ app.post('/send', async (req, res) => {
   }
 
   try {
+    let result;
+
     if (attachment_url) {
       // ─── Avec pièce jointe ──────────────────────────────────────────
       const { dataUrl, mime, filename } = await fetchAttachment(
@@ -98,15 +141,12 @@ app.post('/send', async (req, res) => {
       const caption = message || '';
 
       if (mime.startsWith('image/')) {
-        // Image avec légende
-        await client.sendImageFromBase64(to, dataUrl, filename, caption);
+        result = await client.sendImageFromBase64(to, dataUrl, filename, caption);
       } else if (mime.startsWith('audio/')) {
-        // Note vocale (la légende ne marche pas avec sendVoice → on envoie le texte à part)
-        await client.sendVoiceBase64(to, dataUrl);
+        result = await client.sendVoiceBase64(to, dataUrl);
         if (caption) await client.sendText(to, caption);
       } else {
-        // Vidéo, PDF, doc, etc. — sendFile gère tout avec caption
-        await client.sendFileFromBase64(to, dataUrl, filename, caption);
+        result = await client.sendFileFromBase64(to, dataUrl, filename, caption);
       }
     } else {
       // ─── Texte simple ───────────────────────────────────────────────
@@ -115,8 +155,11 @@ app.post('/send', async (req, res) => {
           .status(400)
           .json({ ok: false, error: 'Ni "message" ni "attachment_url" fourni' });
       }
-      await client.sendText(to, message);
+      result = await client.sendText(to, message);
     }
+
+    // Mémorise la correspondance pour les accusés de réception.
+    rememberSent(extractWaId(result), id);
 
     res.status(200).json({ ok: true });
   } catch (err) {
