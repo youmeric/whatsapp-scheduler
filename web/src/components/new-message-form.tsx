@@ -432,6 +432,7 @@ export function NewMessageForm({
             ) : (
               <Textarea
                 id="message"
+                name="message"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 rows={3}
