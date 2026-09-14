@@ -30,8 +30,14 @@ services:
     container_name: whatsapp-scheduler-web
     restart: unless-stopped
     pull_policy: always
+    # Sécurité : on ne publie PAS le port sur l'IP publique.
+    # Le reverse proxy (NPM) joint l'app en interne par le nom du conteneur
+    # (http://whatsapp-scheduler-web:4000) via le réseau Docker partagé.
+    # On bind seulement sur 127.0.0.1 → accessible en local (debug/SSH tunnel)
+    # mais JAMAIS depuis Internet. Ne remets "0.0.0.0"/rien devant que si tu
+    # sais pourquoi (ex. accès direct sans reverse proxy).
     ports:
-      - "${HOST_PORT:-4000}:4000"
+      - "127.0.0.1:${HOST_PORT:-4000}:4000"
     env_file:
       - ./.env.production
     environment:
