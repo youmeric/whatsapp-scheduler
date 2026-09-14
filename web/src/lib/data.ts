@@ -84,6 +84,11 @@ function normalizeMessage(raw: unknown): ScheduledMessage | null {
     typeof rawAttName === "string" && rawAttName.trim().length > 0
       ? rawAttName.trim()
       : undefined
+  const rawErreur = r.erreur
+  const erreur =
+    typeof rawErreur === "string" && rawErreur.trim().length > 0
+      ? rawErreur.trim()
+      : undefined
   return {
     id: String(r.id),
     date_envoi: String(r.date_envoi),
@@ -100,6 +105,7 @@ function normalizeMessage(raw: unknown): ScheduledMessage | null {
     cree_le: String(r.cree_le ?? ""),
     attachment_url,
     attachment_filename,
+    erreur,
   }
 }
 
@@ -215,6 +221,8 @@ export async function putMessage(
       | "message"
       | "attachment_url"
       | "attachment_filename"
+      | "envoye"
+      | "erreur"
     >
   >
 ): Promise<{ ok: true } | { ok: false; error: string }> {

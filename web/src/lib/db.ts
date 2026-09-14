@@ -99,6 +99,19 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_audit_username ON audit_log(username);
   `)
+
+  // ---------- recipient_groups table ----------
+  // `numeros` = CSV de numéros (chiffres) référençant les contacts feuille 2.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS recipient_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nom TEXT NOT NULL,
+      numeros TEXT NOT NULL DEFAULT '',
+      cree_par TEXT NOT NULL,
+      cree_le TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_groups_nom ON recipient_groups(nom COLLATE NOCASE);
+  `)
 }
 
 function bootstrap(db: Database.Database): void {
@@ -404,6 +417,91 @@ export function deleteTemplate(
 ): { ok: true } | { ok: false; error: string } {
   const info = getDb().prepare("DELETE FROM templates WHERE id = ?").run(id)
   if (info.changes === 0) return { ok: false, error: "Modèle introuvable" }
+  return { ok: true }
+}
+
+// ---------- recipient groups ----------
+
+export type DbRecipientGroup = {
+  id: number
+  nom: string
+  numeros: string // CSV of digits
+  cree_par: string
+  cree_le: string
+}
+
+function normalizeNumeros(numeros: string[]): string {
+  // Chiffres uniquement, dédoublonnés, séparés par des virgules.
+  const seen = new Set<string>()
+  for (const n of numeros) {
+    const d = String(n).replace(/\D/g, "")
+    if (d) seen.add(d)
+  }
+  return Array.from(seen).join(",")
+}
+
+export function listRecipientGroups(): DbRecipientGroup[] {
+  return getDb()
+    .prepare("SELECT * FROM recipient_groups ORDER BY nom COLLATE NOCASE ASC")
+    .all() as DbRecipientGroup[]
+}
+
+export function findRecipientGroupById(id: number): DbRecipientGroup | null {
+  const row = getDb()
+    .prepare("SELECT * FROM recipient_groups WHERE id = ?")
+    .get(id) as DbRecipientGroup | undefined
+  return row ?? null
+}
+
+export function createRecipientGroup(
+  nom: string,
+  numeros: string[],
+  cree_par: string
+): { ok: true; id: number } | { ok: false; error: string } {
+  const n = nom.trim()
+  if (!n) return { ok: false, error: "Le nom du groupe est requis" }
+  if (n.length > 60) return { ok: false, error: "Nom trop long (max 60 caractères)" }
+  const info = getDb()
+    .prepare(
+      "INSERT INTO recipient_groups (nom, numeros, cree_par, cree_le) VALUES (?, ?, ?, ?)"
+    )
+    .run(n, normalizeNumeros(numeros), cree_par, nowLocalDateTime())
+  return { ok: true, id: Number(info.lastInsertRowid) }
+}
+
+export function updateRecipientGroup(
+  id: number,
+  changes: { nom?: string; numeros?: string[] }
+): { ok: true } | { ok: false; error: string } {
+  const setClauses: string[] = []
+  const params: unknown[] = []
+  if (changes.nom !== undefined) {
+    const n = changes.nom.trim()
+    if (!n) return { ok: false, error: "Nom requis" }
+    if (n.length > 60) return { ok: false, error: "Nom trop long" }
+    setClauses.push("nom = ?")
+    params.push(n)
+  }
+  if (changes.numeros !== undefined) {
+    setClauses.push("numeros = ?")
+    params.push(normalizeNumeros(changes.numeros))
+  }
+  if (setClauses.length === 0) return { ok: true }
+  params.push(id)
+  const info = getDb()
+    .prepare(`UPDATE recipient_groups SET ${setClauses.join(", ")} WHERE id = ?`)
+    .run(...(params as never[]))
+  if (info.changes === 0) return { ok: false, error: "Groupe introuvable" }
+  return { ok: true }
+}
+
+export function deleteRecipientGroup(
+  id: number
+): { ok: true } | { ok: false; error: string } {
+  const info = getDb()
+    .prepare("DELETE FROM recipient_groups WHERE id = ?")
+    .run(id)
+  if (info.changes === 0) return { ok: false, error: "Groupe introuvable" }
   return { ok: true }
 }
 

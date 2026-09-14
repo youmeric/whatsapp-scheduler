@@ -7,9 +7,15 @@ import { getSession } from "@/lib/auth"
 import { isAdminOrAbove } from "@/lib/db"
 import { logAudit } from "@/lib/audit"
 import { nowLocalDateTime } from "@/lib/datetime"
+import { digitsOnly } from "@/lib/phone"
+import {
+  hasPersonalizationTokens,
+  personalizeMessage,
+} from "@/lib/personalize"
 import {
   deleteMessage,
   getMessages,
+  getRecipients,
   postMessage,
   putMessage,
 } from "@/lib/data"
@@ -129,17 +135,35 @@ export async function createMessageAction(
     }
   }
 
+  // Personnalisation : si le message contient {nom}/{prenom}/{numero}, on
+  // récupère le carnet une seule fois pour associer chaque numéro à un nom.
+  let nomByDigits: Map<string, string> | null = null
+  if (hasPersonalizationTokens(message)) {
+    try {
+      const carnet = await getRecipients()
+      nomByDigits = new Map(carnet.map((r) => [digitsOnly(r.numero), r.nom]))
+    } catch {
+      nomByDigits = new Map() // en cas d'échec, tokens remplacés par du vide
+    }
+  }
+
   const total = jobs.length
   let createdCount = 0
   const cree_le = nowLocalDateTime()
   for (const job of jobs) {
     const id = randomUUID()
+    const finalMessage = nomByDigits
+      ? personalizeMessage(message, {
+          nom: nomByDigits.get(digitsOnly(job.destinataire)) ?? "",
+          numero: job.destinataire,
+        })
+      : message
     const result = await postMessage({
       id,
       date_envoi: job.date,
       ...(heure_envoi ? { heure_envoi } : {}),
       destinataire: job.destinataire,
-      message,
+      message: finalMessage,
       cree_par: session.username,
       cree_le,
       ...(attachment_url ? { attachment_url } : {}),
@@ -263,6 +287,48 @@ export async function bulkDeleteMessagesAction(
   })
   revalidatePath("/messages")
   return { ok: failed === 0, deleted, failed }
+}
+
+// ---------- Retry (échec d'envoi) ----------
+
+export type RetryMessageState = { ok?: boolean; error?: string } | null
+
+/**
+ * "Réessayer" un message en échec : on efface le champ `erreur` et on s'assure
+ * que envoye=false. Le message redevient un simple "à venir en retard" que le
+ * workflow n8n de rattrapage (heure passée + envoye != TRUE) renverra au
+ * prochain passage.
+ */
+export async function retryMessageAction(
+  formData: FormData
+): Promise<RetryMessageState> {
+  const session = await getSession()
+  if (!session) return { error: "Session expirée." }
+
+  const id = String(formData.get("id") ?? "").trim()
+  if (!id) return { error: "ID manquant." }
+
+  const messages = await getMessages()
+  const target = messages.find((m) => m.id === id)
+  if (!target) return { error: "Message introuvable." }
+  if (
+    !isAdminOrAbove(session.role) &&
+    target.cree_par !== session.username
+  ) {
+    return { error: "Tu ne peux réessayer que les messages que tu as créés." }
+  }
+
+  const result = await putMessage(id, { erreur: "", envoye: false })
+  if (!result.ok) return { error: `Erreur : ${result.error}` }
+
+  logAudit({
+    username: session.username,
+    action: "update_message",
+    target: id,
+    details: { retry: true },
+  })
+  revalidatePath("/messages")
+  return { ok: true }
 }
 
 // ---------- Message update ----------

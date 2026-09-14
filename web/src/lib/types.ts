@@ -23,11 +23,30 @@ export type ScheduledMessage = {
    */
   attachment_url?: string
   attachment_filename?: string
+  /**
+   * Optional error message. Rempli par n8n (sortie error du HTTP Request) quand
+   * un envoi a échoué, via une colonne `erreur` dans le Google Sheet. Vide/absent
+   * = pas d'erreur. Si la colonne n'existe pas, le champ reste undefined.
+   */
+  erreur?: string
 }
 
 export type Recipient = {
   nom: string
   numero: string // phone number in international format
+}
+
+/**
+ * Groupe / liste de diffusion de destinataires — stocké en SQLite côté site.
+ * `numeros` = liste de numéros (chiffres uniquement) référençant des contacts
+ * de la feuille 2. Permet d'ajouter tout un groupe d'un clic dans le formulaire.
+ */
+export type RecipientGroup = {
+  id: number
+  nom: string
+  numeros: string[]
+  cree_par: string
+  cree_le: string
 }
 
 /**

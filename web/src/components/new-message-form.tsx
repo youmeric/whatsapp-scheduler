@@ -7,6 +7,7 @@ import {
   ChevronDownIcon,
   FileText,
   Paperclip,
+  Plus,
   Repeat,
   Search,
   X,
@@ -38,7 +39,7 @@ import {
 } from "@/components/attachment-picker"
 import { cn } from "@/lib/utils"
 import { digitsOnly, toWhatsappAddress } from "@/lib/phone"
-import type { Recipient, Template } from "@/lib/types"
+import type { Recipient, RecipientGroup, Template } from "@/lib/types"
 import {
   createMessageAction,
   type CreateMessageState,
@@ -90,12 +91,14 @@ const RECUR_COUNT_ITEMS: Record<string, string> = Object.fromEntries(
 export function NewMessageForm({
   recipients,
   templates = [],
+  groups = [],
   initialMessage,
   initialDestinataires,
   initialHeure,
 }: {
   recipients: Recipient[]
   templates?: Template[]
+  groups?: RecipientGroup[]
   /** Optional prefill (used when duplicating an existing message). */
   initialMessage?: string
   initialDestinataires?: string[]
@@ -301,6 +304,7 @@ export function NewMessageForm({
             <Label>Destinataire{destinataires.length > 1 ? "s" : ""}</Label>
             <RecipientMultiSelect
               recipients={recipients}
+              groups={groups}
               selected={destinataires}
               onChange={setDestinataires}
             />
@@ -342,6 +346,13 @@ export function NewMessageForm({
               <code className="font-mono">~barré~</code>,{" "}
               <code className="font-mono">```code```</code>,{" "}
               <code className="font-mono">{"> citation"}</code>.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Personnalisation :{" "}
+              <code className="font-mono">{"{nom}"}</code>,{" "}
+              <code className="font-mono">{"{prenom}"}</code>,{" "}
+              <code className="font-mono">{"{numero}"}</code> seront remplacés
+              par les infos de chaque destinataire à l&apos;envoi.
             </p>
           </div>
 
@@ -472,15 +483,25 @@ type RecipientOption = {
  */
 function RecipientMultiSelect({
   recipients,
+  groups,
   selected,
   onChange,
 }: {
   recipients: Recipient[]
+  groups: RecipientGroup[]
   selected: string[]
   onChange: (next: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
+
+  // Add every member of a group to the selection (union, no duplicates).
+  function addGroup(g: RecipientGroup) {
+    const addresses = g.numeros
+      .map((n) => toWhatsappAddress(n))
+      .filter(Boolean)
+    onChange(Array.from(new Set([...selected, ...addresses])))
+  }
 
   const options = useMemo<RecipientOption[]>(
     () =>
@@ -563,6 +584,33 @@ function RecipientMultiSelect({
             />
           </div>
         </div>
+        {groups.length > 0 && (
+          <div className="border-b p-2">
+            <p className="px-1 pb-1.5 text-xs font-medium text-muted-foreground">
+              Groupes
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {groups.map((g) => (
+                <Button
+                  key={g.id}
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => addGroup(g)}
+                  disabled={g.numeros.length === 0}
+                  title={`Ajouter les ${g.numeros.length} contacts de ${g.nom}`}
+                >
+                  <Plus className="size-3.5" />
+                  {g.nom}
+                  <span className="text-muted-foreground">
+                    ({g.numeros.length})
+                  </span>
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="max-h-64 overflow-y-auto p-1">
           {filtered.length === 0 ? (
             <p className="px-2 py-6 text-center text-sm text-muted-foreground">

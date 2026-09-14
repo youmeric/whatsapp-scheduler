@@ -2,8 +2,8 @@ import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getRecipients } from "@/lib/data"
-import { listTemplates } from "@/lib/db"
-import type { Template } from "@/lib/types"
+import { listRecipientGroups, listTemplates } from "@/lib/db"
+import type { RecipientGroup, Template } from "@/lib/types"
 import { NewMessageForm } from "@/components/new-message-form"
 
 export default async function NewMessagePage(props: {
@@ -22,6 +22,13 @@ export default async function NewMessagePage(props: {
     contenu: r.contenu,
     cree_par: r.cree_par,
     cree_le: r.cree_le,
+  }))
+  const groups: RecipientGroup[] = listRecipientGroups().map((g) => ({
+    id: g.id,
+    nom: g.nom,
+    numeros: g.numeros ? g.numeros.split(",").filter(Boolean) : [],
+    cree_par: g.cree_par,
+    cree_le: g.cree_le,
   }))
 
   return (
@@ -51,6 +58,7 @@ export default async function NewMessagePage(props: {
       <NewMessageForm
         recipients={recipients}
         templates={templates}
+        groups={groups}
         initialMessage={message}
         initialDestinataires={destinataire ? [destinataire] : undefined}
         initialHeure={heure}

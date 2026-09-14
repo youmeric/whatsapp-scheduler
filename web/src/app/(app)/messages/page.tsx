@@ -7,6 +7,7 @@ import { getMessages, getRecipients } from "@/lib/data"
 import { getSession } from "@/lib/auth"
 import { MessagesTable } from "@/components/messages-table"
 import { StatsCards } from "@/components/stats-cards"
+import { DashboardCharts } from "@/components/dashboard-charts"
 
 export default async function MessagesPage() {
   const session = await getSession()
@@ -45,6 +46,8 @@ export default async function MessagesPage() {
       </div>
 
       <StatsCards messages={messages} />
+
+      <DashboardCharts messages={messages} recipients={recipients} />
 
       {/* Suspense required because MessagesTable uses useSearchParams. */}
       <Suspense fallback={null}>

@@ -4,13 +4,18 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   CalendarClock,
   Check,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
   Copy,
   Download,
   Paperclip,
+  RotateCcw,
   Search,
   Trash2,
   X,
@@ -41,8 +46,10 @@ import { buildRecipientNameByDigits, digitsOnly } from "@/lib/phone"
 import {
   bulkDeleteMessagesAction,
   deleteMessageAction,
+  retryMessageAction,
 } from "@/app/(app)/messages/actions"
 import { EditMessageDialog } from "@/components/edit-message-dialog"
+import { SaveTemplateButton } from "@/components/save-template-button"
 
 const dateFormatter = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
@@ -67,7 +74,10 @@ function formatDateShort(iso: string): string {
   return dateFormatterShort.format(new Date(y, m - 1, d))
 }
 
-type StatusFilter = "all" | "pending" | "sent"
+type StatusFilter = "all" | "pending" | "sent" | "failed"
+
+type SortField = "date" | "destinataire" | "statut" | "cree_par"
+type SortDir = "asc" | "desc"
 
 type CurrentUser = {
   username: string
@@ -86,6 +96,7 @@ const STATUS_ITEMS: Record<string, string> = {
   all: "Tous",
   pending: "À venir",
   sent: "Envoyés",
+  failed: "Échecs",
 }
 
 function csvEscape(s: string): string {
@@ -136,6 +147,19 @@ export function MessagesTable({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkPending, startBulkTransition] = useTransition()
 
+  // Column sort. null field = default sort (unsent first, by date).
+  const [sortField, setSortField] = useState<SortField | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>("asc")
+
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+    } else {
+      setSortField(field)
+      setSortDir("asc")
+    }
+  }
+
   const syncUrl = useCallback(() => {
     const params = new URLSearchParams()
     if (query.trim()) params.set("q", query.trim())
@@ -173,8 +197,9 @@ export function MessagesTable({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return messages.filter((m) => {
-      if (status === "pending" && m.envoye) return false
+      if (status === "pending" && (m.envoye || m.erreur)) return false
       if (status === "sent" && !m.envoye) return false
+      if (status === "failed" && !m.erreur) return false
       if (creator !== "all" && m.cree_par !== creator) return false
       if (!q) return true
       const name =
@@ -187,16 +212,52 @@ export function MessagesTable({
     })
   }, [messages, query, status, creator, nameByDigits])
 
-  const sorted = useMemo(
-    () =>
-      [...filtered].sort((a, b) => {
+  const sorted = useMemo(() => {
+    const arr = [...filtered]
+    if (sortField === null) {
+      // Default: unsent first, then by ascending date (sent: descending date).
+      arr.sort((a, b) => {
         if (a.envoye !== b.envoye) return a.envoye ? 1 : -1
         return a.envoye
           ? b.date_envoi.localeCompare(a.date_envoi)
           : a.date_envoi.localeCompare(b.date_envoi)
-      }),
-    [filtered]
-  )
+      })
+      return arr
+    }
+    const dir = sortDir === "asc" ? 1 : -1
+    arr.sort((a, b) => {
+      let cmp = 0
+      switch (sortField) {
+        case "date": {
+          const ak = `${a.date_envoi} ${a.heure_envoi ?? "10:00"}`
+          const bk = `${b.date_envoi} ${b.heure_envoi ?? "10:00"}`
+          cmp = ak.localeCompare(bk)
+          break
+        }
+        case "destinataire": {
+          const an =
+            nameByDigits.get(digitsOnly(a.destinataire)) ?? a.destinataire
+          const bn =
+            nameByDigits.get(digitsOnly(b.destinataire)) ?? b.destinataire
+          cmp = an.localeCompare(bn, "fr", { sensitivity: "base" })
+          break
+        }
+        case "statut": {
+          const rank = (m: ScheduledMessage) =>
+            m.erreur ? 2 : m.envoye ? 1 : 0
+          cmp = rank(a) - rank(b)
+          break
+        }
+        case "cree_par":
+          cmp = a.cree_par.localeCompare(b.cree_par, "fr", {
+            sensitivity: "base",
+          })
+          break
+      }
+      return cmp * dir
+    })
+    return arr
+  }, [filtered, sortField, sortDir, nameByDigits])
 
   // Reset to page 1 when filters change. Adjusting state during render (the
   // React-recommended alternative to setState-in-effect):
@@ -366,6 +427,7 @@ export function MessagesTable({
               <SelectItem value="all">Tous</SelectItem>
               <SelectItem value="pending">À venir</SelectItem>
               <SelectItem value="sent">Envoyés</SelectItem>
+              <SelectItem value="failed">Échecs</SelectItem>
             </SelectContent>
           </Select>
 
@@ -482,13 +544,41 @@ export function MessagesTable({
                       aria-label="Tout sélectionner"
                     />
                   </TableHead>
-                  <TableHead className="w-[140px]">Date d&apos;envoi</TableHead>
+                  <SortableHead
+                    field="date"
+                    label="Date d'envoi"
+                    active={sortField}
+                    dir={sortDir}
+                    onSort={toggleSort}
+                    className="w-[140px]"
+                  />
                   <TableHead className="w-[80px]">Heure</TableHead>
-                  <TableHead className="w-[200px]">Destinataire</TableHead>
+                  <SortableHead
+                    field="destinataire"
+                    label="Destinataire"
+                    active={sortField}
+                    dir={sortDir}
+                    onSort={toggleSort}
+                    className="w-[200px]"
+                  />
                   <TableHead>Message</TableHead>
-                  <TableHead className="w-[120px]">Statut</TableHead>
-                  <TableHead className="w-[140px]">Créé par</TableHead>
-                  <TableHead className="w-[110px] text-right pr-4">
+                  <SortableHead
+                    field="statut"
+                    label="Statut"
+                    active={sortField}
+                    dir={sortDir}
+                    onSort={toggleSort}
+                    className="w-[120px]"
+                  />
+                  <SortableHead
+                    field="cree_par"
+                    label="Créé par"
+                    active={sortField}
+                    dir={sortDir}
+                    onSort={toggleSort}
+                    className="w-[140px]"
+                  />
+                  <TableHead className="w-[150px] text-right pr-4">
                     Actions
                   </TableHead>
                 </TableRow>
@@ -555,23 +645,17 @@ export function MessagesTable({
                         </div>
                       </TableCell>
                       <TableCell>
-                        {m.envoye ? (
-                          <Badge variant="secondary" className="gap-1">
-                            <Check className="size-3" />
-                            Envoyé
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="gap-1">
-                            <CalendarClock className="size-3" />
-                            À venir
-                          </Badge>
-                        )}
+                        <StatusBadge message={m} />
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {m.cree_par}
                       </TableCell>
                       <TableCell className="text-right pr-4">
                         <div className="flex justify-end gap-1">
+                          {canManage && m.erreur && (
+                            <RetryMessageButton id={m.id} />
+                          )}
+                          <SaveTemplateButton message={m.message} />
                           <DuplicateMessageButton message={m} />
                           {canEdit && (
                             <EditMessageDialog
@@ -634,16 +718,7 @@ export function MessagesTable({
                             · {m.heure_envoi ?? "10:00"}
                           </span>
                         </div>
-                        {m.envoye ? (
-                          <Badge variant="secondary" className="gap-1 shrink-0">
-                            <Check className="size-3" />
-                            Envoyé
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="gap-1 shrink-0">
-                            <CalendarClock className="size-3" />À venir
-                          </Badge>
-                        )}
+                        <StatusBadge message={m} />
                       </div>
                     </div>
                   </div>
@@ -684,12 +759,23 @@ export function MessagesTable({
                     </div>
                   ) : null}
 
+                  {/* Error detail (mobile) */}
+                  {m.erreur ? (
+                    <div className="pl-6 text-xs text-destructive line-clamp-2">
+                      {m.erreur}
+                    </div>
+                  ) : null}
+
                   {/* Bottom row: author + actions */}
                   <div className="flex items-center justify-between gap-2 pl-6 pt-1">
                     <span className="text-xs text-muted-foreground">
                       par {m.cree_par}
                     </span>
                     <div className="flex items-center gap-1">
+                      {canManage && m.erreur && (
+                        <RetryMessageButton id={m.id} />
+                      )}
+                      <SaveTemplateButton message={m.message} />
                       <DuplicateMessageButton message={m} />
                       {canEdit && (
                         <EditMessageDialog
@@ -764,6 +850,104 @@ export function MessagesTable({
         </>
       )}
     </div>
+  )
+}
+
+function SortableHead({
+  field,
+  label,
+  active,
+  dir,
+  onSort,
+  className,
+}: {
+  field: SortField
+  label: string
+  active: SortField | null
+  dir: SortDir
+  onSort: (f: SortField) => void
+  className?: string
+}) {
+  const isActive = active === field
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        className="flex items-center gap-1 hover:text-foreground"
+      >
+        {label}
+        {isActive ? (
+          dir === "asc" ? (
+            <ArrowUp className="size-3.5" />
+          ) : (
+            <ArrowDown className="size-3.5" />
+          )
+        ) : (
+          <ChevronsUpDown className="size-3.5 opacity-40" />
+        )}
+      </button>
+    </TableHead>
+  )
+}
+
+function StatusBadge({ message }: { message: ScheduledMessage }) {
+  if (message.erreur) {
+    return (
+      <Badge
+        variant="destructive"
+        className="gap-1 shrink-0"
+        title={message.erreur}
+      >
+        <AlertTriangle className="size-3" />
+        Échec
+      </Badge>
+    )
+  }
+  if (message.envoye) {
+    return (
+      <Badge variant="secondary" className="gap-1 shrink-0">
+        <Check className="size-3" />
+        Envoyé
+      </Badge>
+    )
+  }
+  return (
+    <Badge variant="outline" className="gap-1 shrink-0">
+      <CalendarClock className="size-3" />
+      À venir
+    </Badge>
+  )
+}
+
+function RetryMessageButton({ id }: { id: string }) {
+  const [isPending, startTransition] = useTransition()
+
+  function onClick() {
+    const fd = new FormData()
+    fd.set("id", id)
+    startTransition(async () => {
+      const res = await retryMessageAction(fd)
+      if (res?.error) {
+        toast.error(res.error)
+      } else {
+        toast.success("Message remis en file d'envoi")
+      }
+    })
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={onClick}
+      disabled={isPending}
+      className="text-muted-foreground hover:text-foreground size-9 md:size-7"
+      aria-label="Réessayer l'envoi"
+      title="Réessayer l'envoi"
+    >
+      <RotateCcw />
+    </Button>
   )
 }
 
