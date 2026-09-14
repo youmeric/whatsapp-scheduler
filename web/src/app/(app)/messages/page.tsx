@@ -5,6 +5,7 @@ import { CalendarDays, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getMessages, getRecipients } from "@/lib/data"
 import { getSession } from "@/lib/auth"
+import { getMessageAcksMap } from "@/lib/db"
 import { MessagesTable } from "@/components/messages-table"
 import { StatsCards } from "@/components/stats-cards"
 import { DashboardCharts } from "@/components/dashboard-charts"
@@ -16,6 +17,7 @@ export default async function MessagesPage() {
     getMessages(),
     getRecipients(),
   ])
+  const acks = getMessageAcksMap()
 
   return (
     <div className="flex flex-col gap-6">
@@ -54,6 +56,7 @@ export default async function MessagesPage() {
         <MessagesTable
           messages={messages}
           recipients={recipients}
+          acks={acks}
           currentUser={{ username: session.username, role: session.role }}
         />
       </Suspense>

@@ -1,10 +1,12 @@
 "use client"
 
 import { useActionState, useState, useTransition } from "react"
-import { Plus, Search, Trash2, Users } from "lucide-react"
+import Link from "next/link"
+import { History, Plus, Search, Trash2, Upload, Users } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Card,
   CardContent,
@@ -37,6 +39,8 @@ import { digitsOnly } from "@/lib/phone"
 import {
   createRecipientAction,
   deleteRecipientAction,
+  importRecipientsAction,
+  type ImportRecipientsState,
   type RecipientActionState,
 } from "@/app/(app)/recipients/actions"
 
@@ -69,7 +73,10 @@ export function RecipientsManager({
             carnet.
           </p>
         </div>
-        <AddRecipientDialog open={open} setOpen={setOpen} />
+        <div className="flex items-center gap-2">
+          <ImportRecipientsDialog />
+          <AddRecipientDialog open={open} setOpen={setOpen} />
+        </div>
       </div>
 
       <Card>
@@ -143,6 +150,104 @@ export function RecipientsManager({
         </div>
       </Card>
     </div>
+  )
+}
+
+function ImportRecipientsDialog() {
+  const [open, setOpen] = useState(false)
+  const [csv, setCsv] = useState("")
+  const [isPending, startTransition] = useTransition()
+  const [state, formAction] = useActionState<ImportRecipientsState, FormData>(
+    async (prev, fd) => {
+      const next = await importRecipientsAction(prev, fd)
+      if (next?.error) {
+        toast.error(next.error)
+      } else if (next?.ok) {
+        toast.success(
+          `${next.added} contact(s) importé(s)${
+            next.skipped ? `, ${next.skipped} ignoré(s)` : ""
+          }`
+        )
+        setOpen(false)
+        setCsv("")
+      }
+      return next
+    },
+    null
+  )
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const fd = new FormData(e.currentTarget)
+    startTransition(() => formAction(fd))
+  }
+
+  function handleOpenChange(next: boolean) {
+    setOpen(next)
+    if (!next) setCsv("")
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger
+        render={
+          <Button variant="outline">
+            <Upload />
+            Importer
+          </Button>
+        }
+      />
+      <DialogContent>
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Importer des contacts</DialogTitle>
+            <DialogDescription>
+              Une ligne par contact, au format <code>nom,numero</code>.
+              Séparateur virgule, point-virgule ou tabulation. Les numéros
+              invalides sont ignorés.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-2 py-4">
+            <Label htmlFor="csv-import">Contacts (CSV)</Label>
+            <Textarea
+              id="csv-import"
+              name="csv"
+              value={csv}
+              onChange={(e) => setCsv(e.target.value)}
+              rows={8}
+              placeholder={"Marie Dupont, +33 6 12 34 56 78\nJean Martin, 33687654321"}
+              className="font-mono text-xs"
+              required
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">
+              {csv.split(/\r?\n/).filter((l) => l.trim()).length} ligne(s)
+              détectée(s).
+            </p>
+            {state?.error ? (
+              <p className="text-sm text-destructive">{state.error}</p>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <DialogClose
+              render={
+                <Button type="button" variant="ghost">
+                  Annuler
+                </Button>
+              }
+            />
+            <Button
+              type="submit"
+              disabled={isPending || csv.trim().length === 0}
+            >
+              {isPending ? "Import…" : "Importer"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -273,16 +378,33 @@ function RecipientRow({ recipient }: { recipient: Recipient }) {
         {digitsOnly(recipient.numero)}
       </TableCell>
       <TableCell className="pr-6 text-right">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onDelete}
-          disabled={isPending}
-          className="text-muted-foreground hover:text-destructive"
-          aria-label={`Supprimer ${recipient.nom}`}
-        >
-          <Trash2 />
-        </Button>
+        <div className="flex justify-end gap-1">
+          <Button
+            nativeButton={false}
+            render={
+              <Link
+                href={`/messages?q=${encodeURIComponent(digitsOnly(recipient.numero))}`}
+              />
+            }
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground hover:text-foreground"
+            aria-label={`Voir les messages de ${recipient.nom}`}
+            title="Voir les messages envoyés à ce contact"
+          >
+            <History />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onDelete}
+            disabled={isPending}
+            className="text-muted-foreground hover:text-destructive"
+            aria-label={`Supprimer ${recipient.nom}`}
+          >
+            <Trash2 />
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   )
@@ -317,16 +439,33 @@ function RecipientMobileRow({ recipient }: { recipient: Recipient }) {
           {digitsOnly(recipient.numero)}
         </p>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onDelete}
-        disabled={isPending}
-        className="text-muted-foreground hover:text-destructive size-9 shrink-0"
-        aria-label={`Supprimer ${recipient.nom}`}
-      >
-        <Trash2 />
-      </Button>
+      <div className="flex items-center gap-1 shrink-0">
+        <Button
+          nativeButton={false}
+          render={
+            <Link
+              href={`/messages?q=${encodeURIComponent(digitsOnly(recipient.numero))}`}
+            />
+          }
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground hover:text-foreground size-9"
+          aria-label={`Voir les messages de ${recipient.nom}`}
+          title="Voir les messages"
+        >
+          <History />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onDelete}
+          disabled={isPending}
+          className="text-muted-foreground hover:text-destructive size-9"
+          aria-label={`Supprimer ${recipient.nom}`}
+        >
+          <Trash2 />
+        </Button>
+      </div>
     </li>
   )
 }

@@ -29,6 +29,12 @@ export type ScheduledMessage = {
    * = pas d'erreur. Si la colonne n'existe pas, le champ reste undefined.
    */
   erreur?: string
+  /**
+   * Message en pause : ne doit pas être envoyé tant que true. Nécessite une
+   * colonne `pause` dans le Google Sheet ET une condition dans l'IF n8n
+   * (pause != TRUE). Si la colonne n'existe pas, le champ reste false.
+   */
+  pause?: boolean
 }
 
 export type Recipient = {

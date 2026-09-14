@@ -148,6 +148,23 @@ export function NewMessageForm({
     () => [...templates].sort((a, b) => a.nom.localeCompare(b.nom)),
     [templates]
   )
+
+  // Contexte d'aperçu : 1er destinataire sélectionné + date choisie (ou
+  // aujourd'hui) → l'onglet Aperçu montre le message avec les variables
+  // ({nom}, {date}, {semaine}…) déjà remplacées.
+  const previewContext = useMemo(() => {
+    const iso = toIsoDate(date ?? startOfToday())
+    const addr = destinataires[0]
+    if (!addr) return { date: iso }
+    const digits = digitsOnly(addr)
+    const r = recipients.find((x) => digitsOnly(x.numero) === digits)
+    return {
+      nom: r?.nom ?? "",
+      numero: addr,
+      date: iso,
+      label: r?.nom ?? digits,
+    }
+  }, [destinataires, date, recipients])
   const templateItems = useMemo(
     () =>
       Object.fromEntries(
@@ -345,6 +362,7 @@ export function NewMessageForm({
               rows={6}
               placeholder="Bonjour, …"
               required
+              previewContext={previewContext}
             />
             <p className="text-xs text-muted-foreground">
               Formats WhatsApp pris en charge :{" "}
@@ -358,8 +376,12 @@ export function NewMessageForm({
               Personnalisation :{" "}
               <code className="font-mono">{"{nom}"}</code>,{" "}
               <code className="font-mono">{"{prenom}"}</code>,{" "}
-              <code className="font-mono">{"{numero}"}</code> seront remplacés
-              par les infos de chaque destinataire à l&apos;envoi.
+              <code className="font-mono">{"{numero}"}</code> (par destinataire) ·{" "}
+              <code className="font-mono">{"{date}"}</code>,{" "}
+              <code className="font-mono">{"{date+6}"}</code>,{" "}
+              <code className="font-mono">{"{semaine}"}</code>,{" "}
+              <code className="font-mono">{"{jour}"}</code> (selon la date
+              d&apos;envoi) — remplacés automatiquement.
             </p>
           </div>
 

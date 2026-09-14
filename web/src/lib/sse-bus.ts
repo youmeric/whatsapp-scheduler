@@ -16,6 +16,7 @@ const listeners = (globalThis.__sseListeners ??= new Set<Listener>())
 
 export type SseEvent =
   | { type: "message_sent"; id: string; destinataire: string; date_envoi: string }
+  | { type: "ack"; id: string; ack: number }
   | { type: "ping"; t: number }
 
 export function subscribe(cb: Listener): () => void {

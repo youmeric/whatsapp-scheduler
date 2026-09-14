@@ -89,6 +89,12 @@ function normalizeMessage(raw: unknown): ScheduledMessage | null {
     typeof rawErreur === "string" && rawErreur.trim().length > 0
       ? rawErreur.trim()
       : undefined
+  const pause =
+    r.pause === true ||
+    r.pause === "TRUE" ||
+    r.pause === "true" ||
+    r.pause === 1 ||
+    r.pause === "1"
   return {
     id: String(r.id),
     date_envoi: String(r.date_envoi),
@@ -106,6 +112,7 @@ function normalizeMessage(raw: unknown): ScheduledMessage | null {
     attachment_url,
     attachment_filename,
     erreur,
+    pause,
   }
 }
 
@@ -223,6 +230,7 @@ export async function putMessage(
       | "attachment_filename"
       | "envoye"
       | "erreur"
+      | "pause"
     >
   >
 ): Promise<{ ok: true } | { ok: false; error: string }> {

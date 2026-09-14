@@ -122,6 +122,18 @@ function migrate(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_groups_nom ON recipient_groups(nom COLLATE NOCASE);
   `)
+
+  // ---------- message_acks table ----------
+  // Accusés WhatsApp par message (clé = notre id de message). Niveaux ack :
+  // 1 = envoyé (✓), 2 = reçu (✓✓), 3 = lu (✓✓ bleu), 4 = écouté (audio).
+  // Alimenté par le bot via POST /api/ack (onAck de wppconnect).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS message_acks (
+      message_id TEXT PRIMARY KEY,
+      ack INTEGER NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `)
 }
 
 function bootstrap(db: Database.Database): void {
@@ -621,4 +633,33 @@ export function pruneAuditLog(keep = 5000): number {
     )
     .run(keep)
   return info.changes
+}
+
+// ---------- message acks (accusés de réception WhatsApp) ----------
+
+/** Enregistre l'accusé d'un message. N'avance jamais à rebours (lu → reçu). */
+export function setMessageAck(messageId: string, ack: number): void {
+  const id = String(messageId).trim()
+  if (!id) return
+  const level = Math.trunc(ack)
+  getDb()
+    .prepare(
+      `INSERT INTO message_acks (message_id, ack, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(message_id) DO UPDATE SET
+         ack = excluded.ack,
+         updated_at = excluded.updated_at
+       WHERE excluded.ack > message_acks.ack`
+    )
+    .run(id, level, nowLocalDateTime())
+}
+
+/** Map { message_id → niveau ack } pour tous les messages connus. */
+export function getMessageAcksMap(): Record<string, number> {
+  const rows = getDb()
+    .prepare("SELECT message_id, ack FROM message_acks")
+    .all() as { message_id: string; ack: number }[]
+  const map: Record<string, number> = {}
+  for (const r of rows) map[r.message_id] = r.ack
+  return map
 }

@@ -22,6 +22,10 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { WhatsappPreview } from "@/components/whatsapp-preview"
 import { cn } from "@/lib/utils"
+import {
+  hasPersonalizationTokens,
+  personalizeMessage,
+} from "@/lib/personalize"
 
 // Heavy lib — load only client-side and only when needed.
 const EmojiPicker = dynamic(() => import("emoji-picker-react"), {
@@ -51,6 +55,7 @@ export function MessageEditor({
   rows = 6,
   required,
   disabled,
+  previewContext,
 }: {
   id?: string
   name?: string
@@ -60,6 +65,16 @@ export function MessageEditor({
   rows?: number
   required?: boolean
   disabled?: boolean
+  /**
+   * Si fourni, l'onglet Aperçu affiche le rendu avec les tokens
+   * ({nom}, {date}, {semaine}…) déjà remplacés pour ce destinataire d'exemple.
+   */
+  previewContext?: {
+    nom?: string
+    numero?: string
+    date?: string
+    label?: string
+  }
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const [tab, setTab] = useState<"edit" | "preview">("edit")
@@ -251,7 +266,20 @@ export function MessageEditor({
         />
       ) : (
         <div className="p-3">
-          <WhatsappPreview value={value} />
+          {previewContext && hasPersonalizationTokens(value) ? (
+            <>
+              <p className="mb-2 text-xs text-muted-foreground">
+                Aperçu personnalisé
+                {previewContext.label ? ` pour ${previewContext.label}` : ""} —
+                les variables sont remplacées.
+              </p>
+              <WhatsappPreview
+                value={personalizeMessage(value, previewContext)}
+              />
+            </>
+          ) : (
+            <WhatsappPreview value={value} />
+          )}
           {/* Hidden mirror so the form still submits the message field even
               when the user clicks "Aperçu" right before submit. */}
           {name ? <input type="hidden" name={name} value={value} /> : null}

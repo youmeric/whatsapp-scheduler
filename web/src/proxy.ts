@@ -15,8 +15,10 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/health") ||
-    // /api/notify is protected by X-API-Key (called by n8n, not the browser).
+    // /api/notify and /api/ack are protected by X-API-Key (called by the bot,
+    // not the browser).
     pathname.startsWith("/api/notify") ||
+    pathname.startsWith("/api/ack") ||
     // /api/files accepts cookie OR X-API-Key — auth is enforced inside the
     // route handler so n8n/the bot can fetch attachments.
     pathname.startsWith("/api/files") ||

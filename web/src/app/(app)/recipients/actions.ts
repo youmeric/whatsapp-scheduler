@@ -18,6 +18,66 @@ export type RecipientActionState = {
   error?: string
 } | null
 
+export type ImportRecipientsState = {
+  ok?: boolean
+  error?: string
+  added?: number
+  skipped?: number
+} | null
+
+/**
+ * Import CSV : une ligne par contact au format "nom,numero" (séparateur , ; ou
+ * tabulation). Les lignes invalides (numéro < 8 chiffres) sont ignorées.
+ */
+export async function importRecipientsAction(
+  _prev: ImportRecipientsState,
+  formData: FormData
+): Promise<ImportRecipientsState> {
+  const session = await getSession()
+  if (!session) return { error: "Session expirée." }
+
+  const raw = String(formData.get("csv") ?? "")
+  const lines = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+  if (lines.length === 0) return { error: "Rien à importer." }
+
+  let added = 0
+  let skipped = 0
+  for (const line of lines) {
+    const parts = line.split(/[,;\t]/).map((p) => p.trim())
+    const nom = parts[0] ?? ""
+    const numeroInput = parts[1] ?? ""
+    const digits = digitsOnly(numeroInput)
+    // Ignore les en-têtes évidents et les lignes incomplètes.
+    if (!nom || digits.length < 8 || /^nom$/i.test(nom)) {
+      skipped++
+      continue
+    }
+    const result = await postRecipient({
+      nom,
+      numero: toWhatsappAddress(numeroInput),
+    })
+    if (result.ok) added++
+    else skipped++
+  }
+
+  if (added === 0) {
+    return { error: `Aucun contact importé (${skipped} ligne(s) ignorée(s)).` }
+  }
+  logAudit({
+    username: session.username,
+    action: "create_recipient",
+    target: "import",
+    details: { added, skipped },
+  })
+  revalidatePath("/recipients")
+  revalidatePath("/messages")
+  revalidatePath("/messages/new")
+  return { ok: true, added, skipped }
+}
+
 export async function createRecipientAction(
   _prev: RecipientActionState,
   formData: FormData

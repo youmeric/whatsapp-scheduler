@@ -9,6 +9,7 @@ import { logAudit } from "@/lib/audit"
 import { nowLocalDateTime } from "@/lib/datetime"
 import { digitsOnly } from "@/lib/phone"
 import {
+  hasContactTokens,
   hasPersonalizationTokens,
   personalizeMessage,
 } from "@/lib/personalize"
@@ -135,15 +136,17 @@ export async function createMessageAction(
     }
   }
 
-  // Personnalisation : si le message contient {nom}/{prenom}/{numero}, on
-  // récupère le carnet une seule fois pour associer chaque numéro à un nom.
+  // Personnalisation. Les tokens de date ({date}, {semaine}…) utilisent la
+  // date de chaque ligne ; les tokens contact ({nom}/{prenom}/{numero})
+  // nécessitent le carnet, qu'on ne récupère que si besoin.
+  const needsPerso = hasPersonalizationTokens(message)
   let nomByDigits: Map<string, string> | null = null
-  if (hasPersonalizationTokens(message)) {
+  if (hasContactTokens(message)) {
     try {
       const carnet = await getRecipients()
       nomByDigits = new Map(carnet.map((r) => [digitsOnly(r.numero), r.nom]))
     } catch {
-      nomByDigits = new Map() // en cas d'échec, tokens remplacés par du vide
+      nomByDigits = new Map() // en cas d'échec, tokens contact → vide
     }
   }
 
@@ -152,10 +155,11 @@ export async function createMessageAction(
   const cree_le = nowLocalDateTime()
   for (const job of jobs) {
     const id = randomUUID()
-    const finalMessage = nomByDigits
+    const finalMessage = needsPerso
       ? personalizeMessage(message, {
-          nom: nomByDigits.get(digitsOnly(job.destinataire)) ?? "",
+          nom: nomByDigits?.get(digitsOnly(job.destinataire)) ?? "",
           numero: job.destinataire,
+          date: job.date,
         })
       : message
     const result = await postMessage({
@@ -326,6 +330,46 @@ export async function retryMessageAction(
     action: "update_message",
     target: id,
     details: { retry: true },
+  })
+  revalidatePath("/messages")
+  return { ok: true }
+}
+
+// ---------- Pause / reprise ----------
+
+export type PauseMessageState = { ok?: boolean; error?: string } | null
+
+export async function setPauseMessageAction(
+  formData: FormData
+): Promise<PauseMessageState> {
+  const session = await getSession()
+  if (!session) return { error: "Session expirée." }
+
+  const id = String(formData.get("id") ?? "").trim()
+  if (!id) return { error: "ID manquant." }
+  const pause = String(formData.get("pause") ?? "") === "on"
+
+  const messages = await getMessages()
+  const target = messages.find((m) => m.id === id)
+  if (!target) return { error: "Message introuvable." }
+  if (target.envoye) {
+    return { error: "Ce message a déjà été envoyé." }
+  }
+  if (
+    !isAdminOrAbove(session.role) &&
+    target.cree_par !== session.username
+  ) {
+    return { error: "Tu ne peux gérer que les messages que tu as créés." }
+  }
+
+  const result = await putMessage(id, { pause })
+  if (!result.ok) return { error: `Erreur : ${result.error}` }
+
+  logAudit({
+    username: session.username,
+    action: "update_message",
+    target: id,
+    details: { pause },
   })
   revalidatePath("/messages")
   return { ok: true }

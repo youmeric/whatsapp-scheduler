@@ -9,12 +9,15 @@ import {
   ArrowUp,
   CalendarClock,
   Check,
+  CheckCheck,
   ChevronLeft,
   ChevronRight,
   ChevronsUpDown,
   Copy,
   Download,
+  Pause,
   Paperclip,
+  Play,
   RotateCcw,
   Search,
   Trash2,
@@ -43,10 +46,12 @@ import {
 } from "@/components/ui/table"
 import type { Recipient, ScheduledMessage } from "@/lib/types"
 import { buildRecipientNameByDigits, digitsOnly } from "@/lib/phone"
+import { cn } from "@/lib/utils"
 import {
   bulkDeleteMessagesAction,
   deleteMessageAction,
   retryMessageAction,
+  setPauseMessageAction,
 } from "@/app/(app)/messages/actions"
 import { EditMessageDialog } from "@/components/edit-message-dialog"
 import { SaveTemplateButton } from "@/components/save-template-button"
@@ -74,7 +79,7 @@ function formatDateShort(iso: string): string {
   return dateFormatterShort.format(new Date(y, m - 1, d))
 }
 
-type StatusFilter = "all" | "pending" | "sent" | "failed"
+type StatusFilter = "all" | "pending" | "sent" | "failed" | "paused"
 
 type SortField = "date" | "destinataire" | "statut" | "cree_par"
 type SortDir = "asc" | "desc"
@@ -97,6 +102,7 @@ const STATUS_ITEMS: Record<string, string> = {
   pending: "À venir",
   sent: "Envoyés",
   failed: "Échecs",
+  paused: "En pause",
 }
 
 function csvEscape(s: string): string {
@@ -119,10 +125,12 @@ function duplicateHref(m: ScheduledMessage): string {
 export function MessagesTable({
   messages,
   recipients,
+  acks = {},
   currentUser,
 }: {
   messages: ScheduledMessage[]
   recipients: Recipient[]
+  acks?: Record<string, number>
   currentUser: CurrentUser
 }) {
   const router = useRouter()
@@ -197,9 +205,10 @@ export function MessagesTable({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return messages.filter((m) => {
-      if (status === "pending" && (m.envoye || m.erreur)) return false
+      if (status === "pending" && (m.envoye || m.erreur || m.pause)) return false
       if (status === "sent" && !m.envoye) return false
       if (status === "failed" && !m.erreur) return false
+      if (status === "paused" && (!m.pause || m.envoye)) return false
       if (creator !== "all" && m.cree_par !== creator) return false
       if (!q) return true
       const name =
@@ -428,6 +437,7 @@ export function MessagesTable({
               <SelectItem value="pending">À venir</SelectItem>
               <SelectItem value="sent">Envoyés</SelectItem>
               <SelectItem value="failed">Échecs</SelectItem>
+              <SelectItem value="paused">En pause</SelectItem>
             </SelectContent>
           </Select>
 
@@ -645,7 +655,7 @@ export function MessagesTable({
                         </div>
                       </TableCell>
                       <TableCell>
-                        <StatusBadge message={m} />
+                        <StatusBadge message={m} ack={acks[m.id]} />
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {m.cree_par}
@@ -654,6 +664,12 @@ export function MessagesTable({
                         <div className="flex justify-end gap-1">
                           {canManage && m.erreur && (
                             <RetryMessageButton id={m.id} />
+                          )}
+                          {canManage && !m.envoye && !m.erreur && (
+                            <PauseMessageButton
+                              id={m.id}
+                              paused={Boolean(m.pause)}
+                            />
                           )}
                           <SaveTemplateButton
                             message={m.message}
@@ -722,7 +738,7 @@ export function MessagesTable({
                             · {m.heure_envoi ?? "10:00"}
                           </span>
                         </div>
-                        <StatusBadge message={m} />
+                        <StatusBadge message={m} ack={acks[m.id]} />
                       </div>
                     </div>
                   </div>
@@ -778,6 +794,12 @@ export function MessagesTable({
                     <div className="flex items-center gap-1">
                       {canManage && m.erreur && (
                         <RetryMessageButton id={m.id} />
+                      )}
+                      {canManage && !m.envoye && !m.erreur && (
+                        <PauseMessageButton
+                          id={m.id}
+                          paused={Boolean(m.pause)}
+                        />
                       )}
                       <SaveTemplateButton
                         message={m.message}
@@ -899,7 +921,20 @@ function SortableHead({
   )
 }
 
-function StatusBadge({ message }: { message: ScheduledMessage }) {
+const ACK_LABEL: Record<number, string> = {
+  1: "Envoyé",
+  2: "Reçu",
+  3: "Lu",
+  4: "Écouté",
+}
+
+function StatusBadge({
+  message,
+  ack,
+}: {
+  message: ScheduledMessage
+  ack?: number
+}) {
   if (message.erreur) {
     return (
       <Badge
@@ -913,10 +948,33 @@ function StatusBadge({ message }: { message: ScheduledMessage }) {
     )
   }
   if (message.envoye) {
+    // Indicateur d'accusé WhatsApp si connu : ✓ (envoyé), ✓✓ (reçu),
+    // ✓✓ bleu (lu/écouté).
+    const level = ack ?? 0
+    const read = level >= 3
     return (
-      <Badge variant="secondary" className="gap-1 shrink-0">
-        <Check className="size-3" />
-        Envoyé
+      <Badge
+        variant="secondary"
+        className="gap-1 shrink-0"
+        title={level > 0 ? ACK_LABEL[level] : "Envoyé"}
+      >
+        {level >= 2 ? (
+          <CheckCheck className={cn("size-3", read && "text-sky-500")} />
+        ) : (
+          <Check className="size-3" />
+        )}
+        {level >= 2 ? ACK_LABEL[level] : "Envoyé"}
+      </Badge>
+    )
+  }
+  if (message.pause) {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 shrink-0 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800"
+      >
+        <Pause className="size-3" />
+        En pause
       </Badge>
     )
   }
@@ -925,6 +983,41 @@ function StatusBadge({ message }: { message: ScheduledMessage }) {
       <CalendarClock className="size-3" />
       À venir
     </Badge>
+  )
+}
+
+function PauseMessageButton({
+  id,
+  paused,
+}: {
+  id: string
+  paused: boolean
+}) {
+  const [isPending, startTransition] = useTransition()
+
+  function onClick() {
+    const fd = new FormData()
+    fd.set("id", id)
+    fd.set("pause", paused ? "off" : "on")
+    startTransition(async () => {
+      const res = await setPauseMessageAction(fd)
+      if (res?.error) toast.error(res.error)
+      else toast.success(paused ? "Message réactivé" : "Message mis en pause")
+    })
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={onClick}
+      disabled={isPending}
+      className="text-muted-foreground hover:text-foreground size-9 md:size-7"
+      aria-label={paused ? "Réactiver l'envoi" : "Mettre en pause"}
+      title={paused ? "Réactiver l'envoi" : "Mettre en pause (ne sera pas envoyé)"}
+    >
+      {paused ? <Play /> : <Pause />}
+    </Button>
   )
 }
 
