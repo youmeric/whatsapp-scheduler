@@ -20,6 +20,7 @@ import {
   postMessage,
   putMessage,
 } from "@/lib/data"
+import type { ScheduledMessage } from "@/lib/types"
 
 export type CreateMessageState = { error?: string; created?: number } | null
 
@@ -317,25 +318,24 @@ export async function bulkDeleteMessagesAction(
   return { ok: failed === 0, deleted, failed }
 }
 
-// Reconstruit les champs de la ligne à partir du message existant, pour que
-// les PUT partiels (pause, réessai) renvoient la ligne COMPLÈTE et n'écrasent
-// pas les autres colonnes avec du vide (le nœud n8n "Update row" est en
-// mapping manuel).
-function baseRowFields(m: {
-  date_envoi: string
-  heure_envoi?: string
-  destinataire: string
-  message: string
-  attachment_url?: string
-  attachment_filename?: string
-}) {
+// Reconstruit TOUTES les colonnes modifiables à partir du message existant.
+// Indispensable car le nœud n8n "Update row" est en mapping manuel : toute
+// colonne non fournie serait écrasée par du vide. Chaque PUT renvoie donc la
+// ligne complète, puis on écrase seulement les champs voulus.
+function fullRow(m: ScheduledMessage) {
   return {
     date_envoi: m.date_envoi,
-    ...(m.heure_envoi ? { heure_envoi: m.heure_envoi } : {}),
+    heure_envoi: m.heure_envoi ?? "10:00",
     destinataire: m.destinataire,
     message: m.message,
     attachment_url: m.attachment_url ?? "",
     attachment_filename: m.attachment_filename ?? "",
+    type: m.type ?? "text",
+    poll_options: m.poll_options ?? [],
+    poll_multi: m.poll_multi ?? false,
+    pause: m.pause ?? false,
+    erreur: m.erreur ?? "",
+    envoye: m.envoye ?? false,
   }
 }
 
@@ -369,7 +369,7 @@ export async function retryMessageAction(
   }
 
   const result = await putMessage(id, {
-    ...baseRowFields(target),
+    ...fullRow(target),
     erreur: "",
     envoye: false,
   })
@@ -413,7 +413,7 @@ export async function setPauseMessageAction(
   }
 
   const result = await putMessage(id, {
-    ...baseRowFields(target),
+    ...fullRow(target),
     pause,
   })
   if (!result.ok) return { error: `Erreur : ${result.error}` }
@@ -498,18 +498,20 @@ export async function updateMessageAction(
     }
   }
 
-  // Always send attachment_url + attachment_filename so the user can clear
-  // them — empty string means "remove the attachment".
+  // On repart de la ligne complète (préserve pause/erreur/envoye et évite
+  // d'écraser des colonnes), puis on applique les champs édités.
   const result = await putMessage(id, {
+    ...fullRow(target),
     date_envoi,
-    ...(heure_envoi ? { heure_envoi } : {}),
+    heure_envoi: heure_envoi ?? target.heure_envoi ?? "10:00",
     destinataire,
     message,
-    ...(isPoll
-      ? { type: "poll", poll_options: pollOptions, poll_multi: pollMulti }
-      : {}),
-    attachment_url,
-    attachment_filename,
+    type: isPoll ? "poll" : "text",
+    poll_options: isPoll ? pollOptions : [],
+    poll_multi: isPoll ? pollMulti : false,
+    // Un sondage n'a pas de pièce jointe.
+    attachment_url: isPoll ? "" : attachment_url,
+    attachment_filename: isPoll ? "" : attachment_filename,
   })
   if (!result.ok) {
     return { error: `Erreur : ${result.error}` }
