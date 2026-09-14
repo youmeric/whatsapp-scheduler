@@ -450,6 +450,12 @@ export async function updateMessageAction(
   const attachment_filename = String(
     formData.get("attachment_filename") ?? ""
   ).trim()
+  const isPoll = String(formData.get("type") ?? "text") === "poll"
+  const pollOptions = String(formData.get("poll_options") ?? "")
+    .split("|")
+    .map((o) => o.trim())
+    .filter(Boolean)
+  const pollMulti = String(formData.get("poll_multi") ?? "") === "on"
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date_envoi)) {
     return { error: "Date invalide." }
@@ -462,9 +468,18 @@ export async function updateMessageAction(
     heure_envoi = heure_envoi_raw
   }
   if (!destinataire) return { error: "Sélectionnez un destinataire." }
-  if (!message) return { error: "Le message ne peut pas être vide." }
+  if (!message) {
+    return {
+      error: isPoll
+        ? "La question du sondage ne peut pas être vide."
+        : "Le message ne peut pas être vide.",
+    }
+  }
   if (message.length > 1500) {
     return { error: "Message trop long (max 1500 caractères)." }
+  }
+  if (isPoll && (pollOptions.length < 2 || pollOptions.length > 12)) {
+    return { error: "Un sondage nécessite entre 2 et 12 choix." }
   }
 
   // Re-fetch the target to enforce permissions and prevent editing sent messages.
@@ -490,6 +505,9 @@ export async function updateMessageAction(
     ...(heure_envoi ? { heure_envoi } : {}),
     destinataire,
     message,
+    ...(isPoll
+      ? { type: "poll", poll_options: pollOptions, poll_multi: pollMulti }
+      : {}),
     attachment_url,
     attachment_filename,
   })

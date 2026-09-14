@@ -604,7 +604,7 @@ export function MessagesTable({
                     isAdminOrAbove(currentUser.role) ||
                     m.cree_par === currentUser.username
                   const isPoll = m.type === "poll"
-                  const canEdit = canManage && !m.envoye && !isPoll
+                  const canEdit = canManage && !m.envoye
                   const isChecked = selected.has(m.id)
                   return (
                     <TableRow key={m.id} data-selected={isChecked}>
@@ -639,10 +639,14 @@ export function MessagesTable({
                       <TableCell className="max-w-[420px] text-muted-foreground">
                         <div className="flex items-center gap-1.5">
                           {isPoll ? (
-                            <ListChecks
-                              className="size-3.5 shrink-0 text-foreground"
-                              aria-label="Sondage"
-                            />
+                            <Badge
+                              variant="outline"
+                              className="gap-1 shrink-0 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-800"
+                              title={`Sondage · ${m.poll_options?.length ?? 0} choix`}
+                            >
+                              <ListChecks className="size-3" />
+                              Sondage
+                            </Badge>
                           ) : null}
                           {m.attachment_url ? (
                             <a
@@ -659,15 +663,7 @@ export function MessagesTable({
                               <Paperclip className="size-3.5" />
                             </a>
                           ) : null}
-                          <span className="truncate">
-                            {m.message}
-                            {isPoll && m.poll_options?.length ? (
-                              <span className="text-xs">
-                                {" "}
-                                · {m.poll_options.length} choix
-                              </span>
-                            ) : null}
-                          </span>
+                          <span className="truncate">{m.message}</span>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -731,7 +727,7 @@ export function MessagesTable({
                 isAdminOrAbove(currentUser.role) ||
                 m.cree_par === currentUser.username
               const isPoll = m.type === "poll"
-              const canEdit = canManage && !m.envoye && !isPoll
+              const canEdit = canManage && !m.envoye
               const isChecked = selected.has(m.id)
               return (
                 <Card
@@ -781,10 +777,13 @@ export function MessagesTable({
                   {/* Message */}
                   <div className="pl-6 text-sm text-muted-foreground">
                     {isPoll ? (
-                      <span className="mb-0.5 inline-flex items-center gap-1 text-xs font-medium text-foreground">
-                        <ListChecks className="size-3.5" />
+                      <Badge
+                        variant="outline"
+                        className="mb-1 gap-1 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-800"
+                      >
+                        <ListChecks className="size-3" />
                         Sondage · {m.poll_options?.length ?? 0} choix
-                      </span>
+                      </Badge>
                     ) : null}
                     <div className="line-clamp-3">{m.message}</div>
                   </div>

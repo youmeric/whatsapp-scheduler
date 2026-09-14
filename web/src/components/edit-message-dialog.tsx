@@ -1,11 +1,21 @@
 "use client"
 
 import { useActionState, useState, useTransition } from "react"
-import { CalendarIcon, Paperclip, Pencil } from "lucide-react"
+import {
+  CalendarIcon,
+  ListChecks,
+  Paperclip,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogClose,
@@ -102,7 +112,29 @@ export function EditMessageDialog({
         }
       : null
   )
+  const isPoll = message.type === "poll"
+  const [pollOptions, setPollOptions] = useState<string[]>(() =>
+    message.poll_options && message.poll_options.length >= 2
+      ? message.poll_options
+      : ["", ""]
+  )
+  const [pollMulti, setPollMulti] = useState<boolean>(
+    Boolean(message.poll_multi)
+  )
   const [isPending, startTransition] = useTransition()
+
+  const validPollOptions = pollOptions.map((o) => o.trim()).filter(Boolean)
+  function setOption(i: number, val: string) {
+    setPollOptions((prev) => prev.map((o, idx) => (idx === i ? val : o)))
+  }
+  function addOption() {
+    setPollOptions((prev) => (prev.length >= 12 ? prev : [...prev, ""]))
+  }
+  function removeOption(i: number) {
+    setPollOptions((prev) =>
+      prev.length <= 2 ? prev : prev.filter((_, idx) => idx !== i)
+    )
+  }
 
   const [state, formAction] = useActionState<UpdateMessageState, FormData>(
     async (prev, fd) => {
@@ -121,7 +153,11 @@ export function EditMessageDialog({
   const today = startOfToday()
   const charsLeft = MAX_LEN - text.length
   const canSubmit =
-    !!date && !!destinataire && text.trim().length > 0 && charsLeft >= 0
+    !!date &&
+    !!destinataire &&
+    text.trim().length > 0 &&
+    charsLeft >= 0 &&
+    (!isPoll || validPollOptions.length >= 2)
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -147,6 +183,12 @@ export function EditMessageDialog({
             }
           : null
       )
+      setPollOptions(
+        message.poll_options && message.poll_options.length >= 2
+          ? message.poll_options
+          : ["", ""]
+      )
+      setPollMulti(Boolean(message.poll_multi))
     }
   }
 
@@ -175,22 +217,43 @@ export function EditMessageDialog({
           />
           <input type="hidden" name="heure_envoi" value={heure} />
           <input type="hidden" name="destinataire" value={destinataire} />
-          <input
-            type="hidden"
-            name="attachment_url"
-            value={attachment?.url ?? ""}
-          />
-          <input
-            type="hidden"
-            name="attachment_filename"
-            value={attachment?.filename ?? ""}
-          />
+          <input type="hidden" name="type" value={isPoll ? "poll" : "text"} />
+          {isPoll ? (
+            <>
+              <input
+                type="hidden"
+                name="poll_options"
+                value={validPollOptions.join("|")}
+              />
+              <input
+                type="hidden"
+                name="poll_multi"
+                value={pollMulti ? "on" : ""}
+              />
+            </>
+          ) : (
+            <>
+              <input
+                type="hidden"
+                name="attachment_url"
+                value={attachment?.url ?? ""}
+              />
+              <input
+                type="hidden"
+                name="attachment_filename"
+                value={attachment?.filename ?? ""}
+              />
+            </>
+          )}
 
           <DialogHeader>
-            <DialogTitle>Modifier le message</DialogTitle>
+            <DialogTitle>
+              {isPoll ? "Modifier le sondage" : "Modifier le message"}
+            </DialogTitle>
             <DialogDescription>
-              Le message sera envoyé automatiquement à l&apos;heure choisie le
-              jour sélectionné.
+              {isPoll
+                ? "Le sondage sera envoyé à l'heure choisie le jour sélectionné."
+                : "Le message sera envoyé automatiquement à l'heure choisie le jour sélectionné."}
             </DialogDescription>
           </DialogHeader>
 
@@ -307,7 +370,9 @@ export function EditMessageDialog({
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor={`msg-${message.id}`}>Message</Label>
+                <Label htmlFor={`msg-${message.id}`}>
+                  {isPoll ? "Question du sondage" : "Message"}
+                </Label>
                 <span
                   className={cn(
                     "text-xs tabular-nums",
@@ -319,24 +384,88 @@ export function EditMessageDialog({
                   {charsLeft} caractère{Math.abs(charsLeft) > 1 ? "s" : ""}
                 </span>
               </div>
-              <MessageEditor
-                id={`msg-${message.id}`}
-                name="message"
-                value={text}
-                onChange={setText}
-                rows={6}
-                required
-              />
+              {isPoll ? (
+                <Textarea
+                  id={`msg-${message.id}`}
+                  name="message"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  rows={3}
+                  required
+                />
+              ) : (
+                <MessageEditor
+                  id={`msg-${message.id}`}
+                  name="message"
+                  value={text}
+                  onChange={setText}
+                  rows={6}
+                  required
+                />
+              )}
             </div>
 
-            {/* Attachment */}
-            <div className="space-y-2 rounded-lg border border-dashed p-3">
-              <Label className="flex items-center gap-1.5">
-                <Paperclip className="size-3.5 text-muted-foreground" />
-                Pièce jointe (optionnel)
-              </Label>
-              <AttachmentPicker value={attachment} onChange={setAttachment} />
-            </div>
+            {/* Poll options — sondage uniquement */}
+            {isPoll && (
+              <div className="space-y-2 rounded-lg border border-dashed p-3">
+                <Label className="flex items-center gap-1.5">
+                  <ListChecks className="size-3.5 text-muted-foreground" />
+                  Choix du sondage ({validPollOptions.length})
+                </Label>
+                <div className="space-y-2">
+                  {pollOptions.map((o, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <Input
+                        value={o}
+                        onChange={(e) => setOption(i, e.target.value)}
+                        placeholder={`Choix ${i + 1}`}
+                        maxLength={100}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeOption(i)}
+                        disabled={pollOptions.length <= 2}
+                        className="shrink-0 text-muted-foreground hover:text-destructive"
+                        aria-label={`Retirer le choix ${i + 1}`}
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                {pollOptions.length < 12 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addOption}
+                  >
+                    <Plus />
+                    Ajouter un choix
+                  </Button>
+                )}
+                <label className="flex items-center gap-2 text-sm pt-1">
+                  <Checkbox
+                    checked={pollMulti}
+                    onCheckedChange={(v) => setPollMulti(Boolean(v))}
+                  />
+                  Autoriser plusieurs réponses
+                </label>
+              </div>
+            )}
+
+            {/* Attachment — message texte uniquement */}
+            {!isPoll && (
+              <div className="space-y-2 rounded-lg border border-dashed p-3">
+                <Label className="flex items-center gap-1.5">
+                  <Paperclip className="size-3.5 text-muted-foreground" />
+                  Pièce jointe (optionnel)
+                </Label>
+                <AttachmentPicker value={attachment} onChange={setAttachment} />
+              </div>
+            )}
 
             {state?.error ? (
               <p className="text-sm text-destructive">{state.error}</p>

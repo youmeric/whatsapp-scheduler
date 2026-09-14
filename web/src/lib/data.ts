@@ -248,11 +248,20 @@ export async function putMessage(
       | "envoye"
       | "erreur"
       | "pause"
+      | "type"
+      | "poll_options"
+      | "poll_multi"
     >
   >
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const base = getBase()
-  const payload = { id, ...partial }
+  // Sérialise les options de sondage en "a|b|c" pour la cellule Sheet.
+  const { poll_options, ...restPartial } = partial
+  const payload = {
+    id,
+    ...restPartial,
+    ...(poll_options ? { poll_options: poll_options.join("|") } : {}),
+  }
   if (!base) {
     console.log("[mock] would PUT /messages:", payload)
     return { ok: true }
