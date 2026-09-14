@@ -59,6 +59,8 @@ export type Template = {
   contenu: string
   cree_par: string
   cree_le: string
+  attachment_url?: string
+  attachment_filename?: string
 }
 
 /**

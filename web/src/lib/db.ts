@@ -85,6 +85,16 @@ function migrate(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_templates_nom ON templates(nom COLLATE NOCASE);
   `)
+  // Colonnes pièce jointe ajoutées après coup — migration idempotente.
+  const tplCols = (
+    db.prepare("PRAGMA table_info(templates)").all() as { name: string }[]
+  ).map((c) => c.name)
+  if (!tplCols.includes("attachment_url")) {
+    db.exec("ALTER TABLE templates ADD COLUMN attachment_url TEXT")
+  }
+  if (!tplCols.includes("attachment_filename")) {
+    db.exec("ALTER TABLE templates ADD COLUMN attachment_filename TEXT")
+  }
 
   // ---------- audit_log table ----------
   db.exec(`
@@ -346,6 +356,8 @@ export type DbTemplate = {
   contenu: string
   cree_par: string
   cree_le: string
+  attachment_url: string | null
+  attachment_filename: string | null
 }
 
 export function listTemplates(): DbTemplate[] {
@@ -364,7 +376,8 @@ export function findTemplateById(id: number): DbTemplate | null {
 export function createTemplate(
   nom: string,
   contenu: string,
-  cree_par: string
+  cree_par: string,
+  attachment?: { url?: string; filename?: string }
 ): { ok: true; id: number } | { ok: false; error: string } {
   const n = nom.trim()
   const c = contenu.trim()
@@ -372,19 +385,26 @@ export function createTemplate(
   if (n.length > 60) return { ok: false, error: "Nom trop long (max 60 caractères)" }
   if (!c) return { ok: false, error: "Le contenu du modèle est requis" }
   if (c.length > 1500) return { ok: false, error: "Contenu trop long (max 1500 caractères)" }
+  const url = attachment?.url?.trim() || null
+  const filename = attachment?.filename?.trim() || null
   // Pass cree_le explicitly (Paris-local time) — the SQLite default
   // CURRENT_TIMESTAMP is always UTC.
   const info = getDb()
     .prepare(
-      "INSERT INTO templates (nom, contenu, cree_par, cree_le) VALUES (?, ?, ?, ?)"
+      "INSERT INTO templates (nom, contenu, cree_par, cree_le, attachment_url, attachment_filename) VALUES (?, ?, ?, ?, ?, ?)"
     )
-    .run(n, c, cree_par, nowLocalDateTime())
+    .run(n, c, cree_par, nowLocalDateTime(), url, filename)
   return { ok: true, id: Number(info.lastInsertRowid) }
 }
 
 export function updateTemplate(
   id: number,
-  changes: { nom?: string; contenu?: string }
+  changes: {
+    nom?: string
+    contenu?: string
+    attachment_url?: string
+    attachment_filename?: string
+  }
 ): { ok: true } | { ok: false; error: string } {
   const setClauses: string[] = []
   const params: unknown[] = []
@@ -402,6 +422,15 @@ export function updateTemplate(
     if (c.length > 1500) return { ok: false, error: "Contenu trop long" }
     setClauses.push("contenu = ?")
     params.push(c)
+  }
+  // Une chaîne vide efface la pièce jointe.
+  if (changes.attachment_url !== undefined) {
+    setClauses.push("attachment_url = ?")
+    params.push(changes.attachment_url.trim() || null)
+  }
+  if (changes.attachment_filename !== undefined) {
+    setClauses.push("attachment_filename = ?")
+    params.push(changes.attachment_filename.trim() || null)
   }
   if (setClauses.length === 0) return { ok: true }
   params.push(id)

@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useState, useTransition } from "react"
 import {
   FileText,
+  Paperclip,
   Pencil,
   Plus,
   Search,
@@ -33,6 +34,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { MessageEditor } from "@/components/message-editor"
+import {
+  AttachmentPicker,
+  type AttachmentValue,
+} from "@/components/attachment-picker"
 import type { Template } from "@/lib/types"
 import {
   createTemplateAction,
@@ -141,7 +146,17 @@ export function TemplatesManager({
                     t.cree_par === currentUser.username
                   return (
                     <TableRow key={t.id}>
-                      <TableCell className="font-medium">{t.nom}</TableCell>
+                      <TableCell className="font-medium">
+                        <span className="flex items-center gap-1.5">
+                          {t.nom}
+                          {t.attachment_url ? (
+                            <Paperclip
+                              className="size-3.5 text-muted-foreground shrink-0"
+                              aria-label="Avec pièce jointe"
+                            />
+                          ) : null}
+                        </span>
+                      </TableCell>
                       <TableCell className="max-w-[420px] truncate text-muted-foreground">
                         {t.contenu}
                       </TableCell>
@@ -176,7 +191,12 @@ export function TemplatesManager({
                 <Card key={t.id} className="p-3 gap-2">
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-medium text-sm flex-1 min-w-0 break-words">
-                      {t.nom}
+                      <span className="inline-flex items-center gap-1.5">
+                        {t.nom}
+                        {t.attachment_url ? (
+                          <Paperclip className="size-3.5 text-muted-foreground shrink-0" />
+                        ) : null}
+                      </span>
                     </p>
                     {canManage ? (
                       <div className="flex items-center gap-1 shrink-0">
@@ -205,6 +225,7 @@ function CreateTemplateDialog() {
   const [open, setOpen] = useState(false)
   const [nom, setNom] = useState("")
   const [contenu, setContenu] = useState("")
+  const [attachment, setAttachment] = useState<AttachmentValue>(null)
   const [isPending, startTransition] = useTransition()
   const [state, formAction] = useActionState<TemplateActionState, FormData>(
     async (prev, fd) => {
@@ -216,6 +237,7 @@ function CreateTemplateDialog() {
         setOpen(false)
         setNom("")
         setContenu("")
+        setAttachment(null)
       }
       return next
     },
@@ -233,6 +255,7 @@ function CreateTemplateDialog() {
     if (!next) {
       setNom("")
       setContenu("")
+      setAttachment(null)
     }
   }
 
@@ -282,6 +305,23 @@ function CreateTemplateDialog() {
                 required
               />
             </div>
+            <input
+              type="hidden"
+              name="attachment_url"
+              value={attachment?.url ?? ""}
+            />
+            <input
+              type="hidden"
+              name="attachment_filename"
+              value={attachment?.filename ?? ""}
+            />
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <Label className="flex items-center gap-1.5">
+                <Paperclip className="size-3.5 text-muted-foreground" />
+                Pièce jointe (optionnel)
+              </Label>
+              <AttachmentPicker value={attachment} onChange={setAttachment} />
+            </div>
             {state?.error ? (
               <p className="text-sm text-destructive">{state.error}</p>
             ) : null}
@@ -316,6 +356,14 @@ function EditTemplateDialog({ template }: { template: Template }) {
   const [open, setOpen] = useState(false)
   const [nom, setNom] = useState(template.nom)
   const [contenu, setContenu] = useState(template.contenu)
+  const [attachment, setAttachment] = useState<AttachmentValue>(() =>
+    template.attachment_url
+      ? {
+          url: template.attachment_url,
+          filename: template.attachment_filename ?? "Pièce jointe",
+        }
+      : null
+  )
   const [isPending, startTransition] = useTransition()
   const [state, formAction] = useActionState<TemplateActionState, FormData>(
     async (prev, fd) => {
@@ -342,6 +390,14 @@ function EditTemplateDialog({ template }: { template: Template }) {
     if (next) {
       setNom(template.nom)
       setContenu(template.contenu)
+      setAttachment(
+        template.attachment_url
+          ? {
+              url: template.attachment_url,
+              filename: template.attachment_filename ?? "Pièce jointe",
+            }
+          : null
+      )
     }
   }
 
@@ -393,6 +449,23 @@ function EditTemplateDialog({ template }: { template: Template }) {
                 rows={6}
                 required
               />
+            </div>
+            <input
+              type="hidden"
+              name="attachment_url"
+              value={attachment?.url ?? ""}
+            />
+            <input
+              type="hidden"
+              name="attachment_filename"
+              value={attachment?.filename ?? ""}
+            />
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <Label className="flex items-center gap-1.5">
+                <Paperclip className="size-3.5 text-muted-foreground" />
+                Pièce jointe (optionnel)
+              </Label>
+              <AttachmentPicker value={attachment} onChange={setAttachment} />
             </div>
             {state?.error ? (
               <p className="text-sm text-destructive">{state.error}</p>

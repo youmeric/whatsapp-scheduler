@@ -26,14 +26,21 @@ export async function createTemplateAction(
 
   const nom = String(formData.get("nom") ?? "").trim()
   const contenu = String(formData.get("contenu") ?? "").trim()
-  const result = createTemplate(nom, contenu, session.username)
+  const attachment_url = String(formData.get("attachment_url") ?? "").trim()
+  const attachment_filename = String(
+    formData.get("attachment_filename") ?? ""
+  ).trim()
+  const result = createTemplate(nom, contenu, session.username, {
+    url: attachment_url,
+    filename: attachment_filename,
+  })
   if (!result.ok) return { error: result.error }
 
   logAudit({
     username: session.username,
     action: "create_template",
     target: String(result.id),
-    details: { nom },
+    details: { nom, attachment: Boolean(attachment_url) },
   })
   revalidatePath("/templates")
   return { ok: true, id: result.id }
@@ -65,7 +72,16 @@ export async function updateTemplateAction(
 
   const nom = String(formData.get("nom") ?? "").trim()
   const contenu = String(formData.get("contenu") ?? "").trim()
-  const result = updateTemplate(id, { nom, contenu })
+  const attachment_url = String(formData.get("attachment_url") ?? "").trim()
+  const attachment_filename = String(
+    formData.get("attachment_filename") ?? ""
+  ).trim()
+  const result = updateTemplate(id, {
+    nom,
+    contenu,
+    attachment_url,
+    attachment_filename,
+  })
   if (!result.ok) return { error: result.error }
 
   logAudit({

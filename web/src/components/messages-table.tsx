@@ -655,7 +655,11 @@ export function MessagesTable({
                           {canManage && m.erreur && (
                             <RetryMessageButton id={m.id} />
                           )}
-                          <SaveTemplateButton message={m.message} />
+                          <SaveTemplateButton
+                            message={m.message}
+                            attachmentUrl={m.attachment_url}
+                            attachmentFilename={m.attachment_filename}
+                          />
                           <DuplicateMessageButton message={m} />
                           {canEdit && (
                             <EditMessageDialog
@@ -775,7 +779,11 @@ export function MessagesTable({
                       {canManage && m.erreur && (
                         <RetryMessageButton id={m.id} />
                       )}
-                      <SaveTemplateButton message={m.message} />
+                      <SaveTemplateButton
+                        message={m.message}
+                        attachmentUrl={m.attachment_url}
+                        attachmentFilename={m.attachment_filename}
+                      />
                       <DuplicateMessageButton message={m} />
                       {canEdit && (
                         <EditMessageDialog

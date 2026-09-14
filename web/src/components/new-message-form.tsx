@@ -175,6 +175,13 @@ export function NewMessageForm({
       return
     }
     setMessage(tpl.contenu)
+    // Le modèle peut embarquer une pièce jointe → on la reprend telle quelle.
+    if (tpl.attachment_url) {
+      setAttachment({
+        url: tpl.attachment_url,
+        filename: tpl.attachment_filename ?? "Pièce jointe",
+      })
+    }
   }
 
   return (

@@ -24,7 +24,15 @@ import {
 } from "@/app/(app)/templates/actions"
 
 /** Bouton qui enregistre le contenu d'un message existant comme modèle réutilisable. */
-export function SaveTemplateButton({ message }: { message: string }) {
+export function SaveTemplateButton({
+  message,
+  attachmentUrl,
+  attachmentFilename,
+}: {
+  message: string
+  attachmentUrl?: string
+  attachmentFilename?: string
+}) {
   const [open, setOpen] = useState(false)
   const [nom, setNom] = useState("")
   const [contenu, setContenu] = useState(message)
@@ -81,7 +89,24 @@ export function SaveTemplateButton({ message }: { message: string }) {
             </DialogDescription>
           </DialogHeader>
 
+          <input
+            type="hidden"
+            name="attachment_url"
+            value={attachmentUrl ?? ""}
+          />
+          <input
+            type="hidden"
+            name="attachment_filename"
+            value={attachmentFilename ?? ""}
+          />
+
           <div className="flex flex-col gap-4 py-4">
+            {attachmentUrl ? (
+              <p className="text-xs text-muted-foreground">
+                📎 La pièce jointe du message sera incluse dans le modèle
+                {attachmentFilename ? ` (${attachmentFilename})` : ""}.
+              </p>
+            ) : null}
             <div className="space-y-2">
               <Label htmlFor="tpl-save-nom">Nom du modèle</Label>
               <Input

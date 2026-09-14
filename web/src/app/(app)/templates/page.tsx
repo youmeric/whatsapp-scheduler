@@ -16,6 +16,8 @@ export default async function TemplatesPage() {
     contenu: r.contenu,
     cree_par: r.cree_par,
     cree_le: r.cree_le,
+    attachment_url: r.attachment_url ?? undefined,
+    attachment_filename: r.attachment_filename ?? undefined,
   }))
 
   return (

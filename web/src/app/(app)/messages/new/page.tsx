@@ -22,6 +22,8 @@ export default async function NewMessagePage(props: {
     contenu: r.contenu,
     cree_par: r.cree_par,
     cree_le: r.cree_le,
+    attachment_url: r.attachment_url ?? undefined,
+    attachment_filename: r.attachment_filename ?? undefined,
   }))
   const groups: RecipientGroup[] = listRecipientGroups().map((g) => ({
     id: g.id,
