@@ -317,6 +317,28 @@ export async function bulkDeleteMessagesAction(
   return { ok: failed === 0, deleted, failed }
 }
 
+// Reconstruit les champs de la ligne à partir du message existant, pour que
+// les PUT partiels (pause, réessai) renvoient la ligne COMPLÈTE et n'écrasent
+// pas les autres colonnes avec du vide (le nœud n8n "Update row" est en
+// mapping manuel).
+function baseRowFields(m: {
+  date_envoi: string
+  heure_envoi?: string
+  destinataire: string
+  message: string
+  attachment_url?: string
+  attachment_filename?: string
+}) {
+  return {
+    date_envoi: m.date_envoi,
+    ...(m.heure_envoi ? { heure_envoi: m.heure_envoi } : {}),
+    destinataire: m.destinataire,
+    message: m.message,
+    attachment_url: m.attachment_url ?? "",
+    attachment_filename: m.attachment_filename ?? "",
+  }
+}
+
 // ---------- Retry (échec d'envoi) ----------
 
 export type RetryMessageState = { ok?: boolean; error?: string } | null
@@ -346,7 +368,11 @@ export async function retryMessageAction(
     return { error: "Tu ne peux réessayer que les messages que tu as créés." }
   }
 
-  const result = await putMessage(id, { erreur: "", envoye: false })
+  const result = await putMessage(id, {
+    ...baseRowFields(target),
+    erreur: "",
+    envoye: false,
+  })
   if (!result.ok) return { error: `Erreur : ${result.error}` }
 
   logAudit({
@@ -386,7 +412,10 @@ export async function setPauseMessageAction(
     return { error: "Tu ne peux gérer que les messages que tu as créés." }
   }
 
-  const result = await putMessage(id, { pause })
+  const result = await putMessage(id, {
+    ...baseRowFields(target),
+    pause,
+  })
   if (!result.ok) return { error: `Erreur : ${result.error}` }
 
   logAudit({
